@@ -160,6 +160,8 @@ make points     # 导出点表 docs/点表.csv
 2. GitHub 仓库设置：Variables `DEPLOY_ENABLED=true`；Secrets `VPS_HOST` / `VPS_USER` / `VPS_SSH_KEY`；GHCR 包设为 public（或在 VPS 上 `docker login ghcr.io`）。
 3. 推送到 `main`：CI 测试 → 构建 api / fep / rtu-sim / gateway 镜像 → 上传 compose 文件 → `docker compose pull && up -d`。
 
+80/443 被其他服务占用时，在 `.env` 设 `HTTP_PORT` / `HTTPS_PORT` 改用其他端口（如 8088；无域名时只走 HTTP）。
+
 VPS 只开放 80/443；数据库、Redis 和 104 端口仅在 compose 内网可达。
 
 ## 接口
