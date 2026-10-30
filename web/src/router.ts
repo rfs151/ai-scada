@@ -6,6 +6,7 @@ export const nav: { path: string; route?: string; title: string; component: () =
   { path: '/alarms', title: '告警', component: () => import('./views/AlarmsView.vue') },
   { path: '/events', title: 'SOE 事件', component: () => import('./views/EventsView.vue') },
   { path: '/pdr', route: '/pdr/:id?', title: '事故追忆', component: () => import('./views/PdrView.vue') },
+  { path: '/reports', title: '报表', component: () => import('./views/ReportsView.vue') },
   { path: '/frames', title: '报文监视', component: () => import('./views/FramesView.vue') },
   { path: '/audit', title: '审计', component: () => import('./views/AuditView.vue') },
   { path: '/status', title: '系统状态', component: () => import('./views/StatusView.vue') },

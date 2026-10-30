@@ -199,6 +199,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
       <aside class="soe">
         <div class="soe-h">SOE 事件顺序（设备时标）</div>
+        <div class="soe-note">遥测报文不带时标（M_ME_NC_1），按主站接收时间回放，会比 SOE 滞后数百毫秒</div>
         <div class="soe-list">
           <div
             v-for="(e, i) in events"
@@ -323,6 +324,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .soe-h {
   padding: 8px 12px;
   font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+.soe-note {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text-dim);
   border-bottom: 1px solid var(--border);
 }
 .soe-list {

@@ -77,6 +77,10 @@ const clock = (t: number) => new Date(t * 1000).toLocaleTimeString('zh-CN', { ho
         经仿真控制通道下发到仿真子站，与 104 数据通道无关。保护、重合闸、备自投由子站内装置逻辑自动完成，主站只看到
         SOE、告警和遥测变化——与真实变电站一致。
       </p>
+      <div v-if="info?.auto_reset.enabled && info.auto_reset.next_at" class="note">
+        演示环境每 {{ info.auto_reset.interval_min }} 分钟自动恢复正常运行方式（有人操作时推迟到空闲
+        {{ info.auto_reset.idle_min }} 分钟后），下次约 {{ new Date(info.auto_reset.next_at).toLocaleTimeString('zh-CN', { hour12: false }) }}。
+      </div>
       <div v-if="!auth.can('sim')" class="note warn">
         访客只读，<a class="link" @click="auth.showLogin = true">登录</a>后可注入场景。
       </div>

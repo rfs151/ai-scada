@@ -9,6 +9,7 @@ import asyncpg
 from app import db
 from app.alarm.engine import AlarmEngine
 from app.auth.users import seed_demo_users
+from app.autoreset import AutoReset
 from app.realtime.historian import Historian
 from scadalib.model import Cat
 
@@ -22,6 +23,7 @@ class Workers:
         self.historian = Historian(self.redis, self.pool,
                                    {p.id for p in self.station.points if p.cat in (Cat.YC, Cat.DD)})  # fmt: skip
         self.alarm = AlarmEngine(self.station, self.redis, self.pool, state.tags)
+        state.auto_reset = self.auto_reset = AutoReset(state, settings.auto_reset_min)
         self.db_ready = False
         self.tasks: list[asyncio.Task] = []
 
@@ -52,8 +54,9 @@ class Workers:
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30)
         self.db_ready = True
-        alarm = asyncio.create_task(self.alarm.run(), name="alarm")
-        self.tasks.append(alarm)
+        self.tasks.append(asyncio.create_task(self.alarm.run(), name="alarm"))
+        if self.auto_reset.enabled:
+            self.tasks.append(asyncio.create_task(self.auto_reset.run(), name="auto_reset"))
         await self.historian.run()
 
     def status(self) -> dict:
@@ -61,6 +64,7 @@ class Workers:
             "db_ready": self.db_ready,
             "historian": self.historian.stats,
             "alarm": self.alarm.stats,
+            "auto_reset": self.auto_reset.info(),
             "hub": {"clients": len(self.hub.clients), **self.hub.stats},
             "tasks": {t.get_name(): ("running" if not t.done() else "stopped") for t in self.tasks},
         }

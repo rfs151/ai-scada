@@ -1,20 +1,17 @@
 """仿真场景注入（仅演示系统）：经 Redis 仿真控制通道下发到仿真子站，与 104 数据通道无关。"""
 
 import asyncio
-import json
 import time
-import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app import audit
+from app import audit, sim_control
 from app.auth.deps import client_ip, require
 from app.auth.security import User
 
 router = APIRouter(prefix="/api/sim", tags=["sim"])
 
-CMD_KEY, STATE_KEY = "sim:cmd", "sim:state"
 COOLDOWN_S = 2.0
 
 SCENARIOS = [
@@ -50,20 +47,17 @@ def _targets(st) -> dict[str, list[dict]]:
     }
 
 
-async def _state(redis) -> dict | None:
-    raw = await redis.get(STATE_KEY)
-    return json.loads(raw) if raw else None
-
-
 @router.get("", summary="场景列表与自动装置状态")
 async def info(request: Request) -> dict:
     st = request.app.state
-    return {"scenarios": SCENARIOS, "targets": _targets(st.station), "state": await _state(st.redis)}
+    auto = st.auto_reset.info() if getattr(st, "auto_reset", None) else {"enabled": False}
+    return {"scenarios": SCENARIOS, "targets": _targets(st.station), "state": await sim_control.state(st.redis),
+            "auto_reset": auto}  # fmt: skip
 
 
 @router.get("/state", summary="自动装置状态（备自投充电、重合闸充电、当前故障）")
 async def state(request: Request) -> dict | None:
-    return await _state(request.app.state.redis)
+    return await sim_control.state(request.app.state.redis)
 
 
 class InjectReq(BaseModel):
@@ -86,17 +80,14 @@ async def inject(req: InjectReq, request: Request, user: User = Depends(require(
         valid = {t["id"] for t in _targets(st.station)[sc["target"]]}
         if req.target not in valid:
             raise HTTPException(400, f"请选择对象：{'、'.join(sorted(valid))}")
-    if await _state(st.redis) is None:
+    if await sim_control.state(st.redis) is None:
         raise HTTPException(503, "仿真子站未连接仿真控制通道")
     async with _lock:
         wait = COOLDOWN_S - (time.monotonic() - _last_inject)
         if wait > 0:
             raise HTTPException(429, f"操作过于频繁，请 {wait:.0f} 秒后再试")
         _last_inject = time.monotonic()
-    rid = uuid.uuid4().hex
-    await st.redis.lpush(CMD_KEY, json.dumps({"id": rid, "scenario": req.scenario, "target": req.target}))
-    item = await st.redis.blpop([f"sim:res:{rid}"], timeout=5)
-    res = json.loads(item[1]) if item else {"ok": False, "detail": "仿真子站无响应"}
+    res = await sim_control.send(st.redis, req.scenario, req.target)
     await audit.write(st.pool, "sim.inject", user=user, target=f"{sc['name']} {req.target or ''}".strip(),
                       ok=res["ok"], detail={"scenario": req.scenario, "detail": res["detail"]},
                       ip=client_ip(request))  # fmt: skip

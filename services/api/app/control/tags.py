@@ -62,6 +62,12 @@ class TagStore:
             await self._changed()
         return _row(r) if r else None
 
+    async def clear(self) -> int:
+        """摘除全部标识牌（自动复位用），以数据库为准，不依赖缓存。"""
+        n = len(await self.pool.fetch("DELETE FROM tag RETURNING id"))
+        await self._changed()
+        return n
+
     async def _changed(self) -> None:
         self._tags = None
         await publish(self.redis, {"type": "tags", "tags": await self.all()})

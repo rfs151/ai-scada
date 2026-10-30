@@ -1,6 +1,6 @@
 import type {
-  Alarm, AuditEntry, AuthConfig, Channel, CheckResult, ControlSession, Frame, History, Pdr, PdrReplay, Point, SimInfo,
-  SimState, Station, Tag, User, YxEvent,
+  Alarm, AuditEntry, AuthConfig, Channel, CheckResult, ControlSession, Frame, History, Pdr, PdrReplay, Point, Report,
+  SimInfo, SimState, Station, Tag, User, YxEvent,
 } from './types' // prettier-ignore
 
 export class ApiError extends Error {
@@ -50,6 +50,18 @@ async function request<T>(method: string, url: string, body?: unknown, signal?: 
 }
 
 const get = <T>(url: string, signal?: AbortSignal) => request<T>('GET', url, undefined, signal)
+
+/** 下载文件（带登录令牌，文件名取服务端 Content-Disposition） */
+async function download(url: string, fallbackName: string) {
+  const r = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  if (!r.ok) throw new ApiError(r.status, `${r.status} ${r.statusText}`)
+  const m = /filename\*=UTF-8''([^;]+)/.exec(r.headers.get('Content-Disposition') ?? '')
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(await r.blob())
+  a.download = m ? decodeURIComponent(m[1]) : fallbackName
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+}
 const post = <T>(url: string, body?: unknown) => request<T>('POST', url, body ?? {})
 
 export const api = {
@@ -111,6 +123,15 @@ export const api = {
     post<{ ok: boolean; detail: string }>('/api/sim/inject', { scenario, target }),
   pdrList: (limit = 50) => get<Pdr[]>(`/api/pdr?limit=${limit}`),
   pdr: (id: number) => get<PdrReplay>(`/api/pdr/${id}`),
+
+  // ---- 报表
+  report: (start: Date, end: Date) =>
+    get<Report>(`/api/reports/summary?${new URLSearchParams({ start: start.toISOString(), end: end.toISOString() })}`),
+  reportExport: (start: Date, end: Date) =>
+    download(
+      `/api/reports/export.xlsx?${new URLSearchParams({ start: start.toISOString(), end: end.toISOString() })}`,
+      '运行报表.xlsx',
+    ),
 
   // ---- 审计
   audit: (limit = 300, action?: string) => {

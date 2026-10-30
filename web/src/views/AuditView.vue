@@ -25,6 +25,8 @@ const ACTION_CN: Record<string, string> = {
   'tag.add': '挂牌',
   'tag.remove': '摘牌',
   'alarm.ack': '告警确认',
+  'sim.inject': '场景注入',
+  'system.reset': '自动复位',
 }
 const FILTERS = [
   { label: '全部操作', value: '' },
@@ -32,13 +34,16 @@ const FILTERS = [
   { label: '遥控/遥调', value: 'control' },
   { label: '挂牌', value: 'tag' },
   { label: '告警确认', value: 'alarm' },
+  { label: '场景注入', value: 'sim' },
+  { label: '系统', value: 'system' },
 ]
 
 /** 详情摘要：挑出最有用的字段 */
 function summary(d: Record<string, unknown> | null): string {
   if (!d) return ''
   const parts: string[] = []
-  for (const k of ['action', 'value', 'kind', 'node', 'reason', 'stage', 'detail', 'elapsed_ms']) {
+  for (const k of ['action', 'value', 'kind', 'node', 'reason', 'stage', 'scenario', 'detail', 'elapsed_ms', 'sim',
+    'tags_removed', 'alarms_acked']) {
     if (d[k] !== undefined && d[k] !== null && d[k] !== '') parts.push(`${k}=${d[k]}`)
   }
   const v = d.violations as string[] | undefined

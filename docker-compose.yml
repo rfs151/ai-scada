@@ -110,6 +110,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-}
       DEMO_MODE: ${DEMO_MODE:-true}
       DEMO_PASSWORD: ${DEMO_PASSWORD:-scada@2024}
+      AUTO_RESET_MIN: ${AUTO_RESET_MIN:-60}
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }

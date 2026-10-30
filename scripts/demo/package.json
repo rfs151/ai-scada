@@ -1,0 +1,9 @@
+{
+  "name": "scada-demo-recorder",
+  "private": true,
+  "type": "module",
+  "description": "录制演示视频与 README 截图：node record.mjs [http://127.0.0.1:18088]",
+  "devDependencies": {
+    "playwright": "1.49.1"
+  }
+}

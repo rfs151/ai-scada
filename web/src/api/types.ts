@@ -198,6 +198,7 @@ export interface SimInfo {
   scenarios: Scenario[]
   targets: Record<string, { id: string; name: string }[]>
   state: SimState | null
+  auto_reset: AutoResetInfo
 }
 
 export interface Pdr {
@@ -218,4 +219,74 @@ export interface PdrReplay {
   /** 遥测变化：[时标, 点号, 值, 品质]，按时间排序 */
   analog: [number, string, number, number][]
   events: YxEvent[]
+}
+
+// ------------------------------------------------------------ P5：运行报表
+
+export interface LoadStats {
+  max: number | null
+  max_t: number | null
+  min: number | null
+  min_t: number | null
+  avg: number | null
+  load_factor: number | null
+  peak_valley: number | null
+}
+
+export interface Report {
+  start: number
+  end: number
+  bucket_s: number
+  load: LoadStats
+  import: LoadStats
+  curve: { t: number; import: number | null; load: number | null; pv: number | null }[]
+  voltage: {
+    point: string
+    name: string
+    lo: number
+    hi: number
+    rate: number | null
+    minutes: number
+    over: number
+    under: number
+    outage: number
+    max: number | null
+    max_t: number | null
+    min: number | null
+    min_t: number | null
+  }[]
+  transformers: {
+    bay: string
+    name: string
+    load_max: number | null
+    load_max_t: number | null
+    load_avg: number | null
+    oil_max: number | null
+    oil_max_t: number | null
+    tap_ops: number
+    energy_kwh: number | null
+  }[]
+  feeders: {
+    bay: string
+    name: string
+    kind: string
+    i_max: number | null
+    i_max_t: number | null
+    i_limit: number | null
+    p_max: number | null
+    p_avg: number | null
+    energy_kwh: number | null
+    trips: number
+  }[]
+  alarms: Record<string, number>
+  operations: Record<string, { ok: number; fail: number }>
+  pdr: number
+}
+
+export interface AutoResetInfo {
+  enabled: boolean
+  interval_min?: number
+  idle_min?: number
+  next_at?: number | null
+  last?: { t: number; tags_removed: number; alarms_acked: number } | null
 }

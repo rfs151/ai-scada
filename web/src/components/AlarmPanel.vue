@@ -273,8 +273,18 @@ function toggleMute() {
   font-size: 12px;
 }
 @media (max-width: 720px) {
-  .latest {
+  .latest,
+  .title {
     display: none;
+  }
+  /* 窄屏：告警栏内部横向滚动，不撑宽页面 */
+  .bar {
+    gap: 6px;
+    padding: 0 8px;
+    overflow-x: auto;
+  }
+  .actions {
+    margin-left: auto;
   }
 }
 </style>

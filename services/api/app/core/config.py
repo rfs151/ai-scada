@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     # 演示模式：自动创建演示账号，并在登录页提示账号口令
     demo_mode: bool = True
     demo_password: str = "scada@2024"
+    # 演示环境自动复位间隔（分钟），0 关闭；有人操作后推迟到空闲 10 分钟再复位
+    auto_reset_min: float = 60
 
     # ---- 遥控
     control_session_s: float = 120.0  # 发起 → 执行的总时限
