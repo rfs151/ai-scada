@@ -1,7 +1,7 @@
 """告警判定（纯逻辑，不含 IO，便于单元测试）。
 
 告警分级（参照调度告警直传规范的五类）：
-    1 事故：事故跳闸、保护动作、重合闸动作、事故总
+    1 事故：事故跳闸、保护动作、重合闸 / 备自投动作、事故总
     2 异常：通道中断、母线失压、位置不定、弹簧未储能、轻瓦斯、油温高、接地告警
     3 越限：遥测越上/下限、越上上/下下限
     4 变位：遥控变位、就地（非遥控）变位
@@ -22,8 +22,9 @@ LEVEL_CN = {1: "事故", 2: "异常", 3: "越限", 4: "变位", 5: "告知"}
 LIMIT_CN = {"hihi": "越上上限", "hi": "越上限", "lo": "越下限", "lolo": "越下下限"}
 SEVERITY = {None: 0, "hi": 1, "lo": 1, "hihi": 2, "lolo": 2}
 
-ACCIDENT_SIGNALS = {"PROT", "DIFF", "GAS_H", "RECL", "ACC"}
+ACCIDENT_SIGNALS = {"PROT", "DIFF", "GAS_H", "RECL", "BZT", "ACC"}
 PROTECTION_SIGNALS = {"PROT", "DIFF", "GAS_H"}
+AUTO_SIGNALS = {"RECL", "BZT"}  # 自动装置
 # 母线三相电压以 Uab 为代表告警，避免一次失压产生三条告警
 SKIP_LIMIT = {"UBC", "UCA"}
 VOLTAGE_MEAS = {"UAB"}
@@ -43,6 +44,11 @@ class AlarmDraft:
     bay: str | None = None
     device: str | None = None
     value: float | None = None
+
+
+def _after(at: int | None, t: int) -> bool:
+    """t 在动作信号之后的关联时间窗内。"""
+    return at is not None and 0 <= t - at <= PROT_WINDOW_MS
 
 
 def _side(state: str | None) -> str | None:
@@ -81,7 +87,9 @@ class AlarmRules:
             str, tuple[str | None, int, float]
         ] = {}  # 待确认的越限状态 (目标, 起始时标, 最新值)
         self.dead_bays: set[str] = set()
-        self.prot_at: dict[str, int] = {}  # 间隔 → 最近一次保护动作时标
+        self.prot_at: dict[str, int] = {}  # 间隔 → 最近一次保护动作时标（"STN" 为事故总）
+        self.recl_at: dict[str, int] = {}  # 间隔 → 最近一次重合闸动作时标
+        self.bzt_at: int | None = None  # 最近一次备自投动作时标（备自投跨间隔操作开关）
         self.channels: dict[str, str] = {}
         self.vn = {b.id: float(st.voltage_levels[b.vl]["vn_kv"]) for b in st.bays}
 
@@ -237,16 +245,29 @@ class AlarmRules:
                 if commanded.get("supervisor"):
                     who += f"，监护人 {commanded['supervisor']}"
                 return [AlarmDraft(t, 4, "遥控变位", f"{eq.name} 遥控{verb}（{who}）", **base)]
-            if eq.type == "breaker" and v == DPI.OFF and self._prot_recent(p.bay, t):
-                return [AlarmDraft(t, 1, "事故跳闸", f"{eq.name} 事故跳闸{gi}", **base)]
+            if eq.type == "breaker":
+                # 自动装置操作的开关：动作信号先于开关变位上送
+                if v == DPI.ON and _after(self.recl_at.get(p.bay), t):
+                    return [AlarmDraft(t, 4, "重合闸合闸", f"{eq.name} 重合闸合闸{gi}", **base)]
+                if _after(self.bzt_at, t):
+                    return [AlarmDraft(t, 4, "备自投变位", f"{eq.name} 备自投{verb}{gi}", **base)]
+                # 保护跳闸：本间隔保护动作，或全站事故总（主变保护跳其他间隔的进线、桥开关）
+                if v == DPI.OFF and (self._prot_recent(p.bay, t) or self._prot_recent("STN", t)):
+                    return [AlarmDraft(t, 1, "事故跳闸", f"{eq.name} 事故跳闸{gi}", **base)]
             return [AlarmDraft(t, 4, "变位", f"{eq.name} {verb}（非遥控）{gi}", **base)]
 
         # 单点信号
         if v:
-            if p.meas in PROTECTION_SIGNALS:
+            if p.meas in PROTECTION_SIGNALS or p.meas == "ACC":
                 self.prot_at[p.bay] = t
-            level = 1 if p.meas in ACCIDENT_SIGNALS else 2
-            return [AlarmDraft(t, level, "保护动作" if level == 1 else "告警信号", f"{p.name}{gi}", **base)]
+            elif p.meas == "RECL":
+                self.recl_at[p.bay] = t
+            elif p.meas == "BZT":
+                self.bzt_at = t
+            if p.meas in ACCIDENT_SIGNALS:
+                kind = "自动装置" if p.meas in AUTO_SIGNALS else ("事故总" if p.meas == "ACC" else "保护动作")
+                return [AlarmDraft(t, 1, kind, f"{p.name}{gi}", **base)]
+            return [AlarmDraft(t, 2, "告警信号", f"{p.name}{gi}", **base)]
         return [AlarmDraft(t, 5, "复归", f"{p.name} 复归{gi}", **base)]
 
     def _prot_recent(self, bay: str, t: int) -> bool:

@@ -27,6 +27,8 @@ log = logging.getLogger(__name__)
 
 GROUP = "alarm"
 CHANNEL_POLL_S = 2.0
+PDR_MERGE_MS = 20_000  # 同一次事故的后续动作（重合、后加速、备自投）在数秒内完成，并入同一条追忆
+PDR_TRIGGERS = {"事故跳闸", "保护动作", "自动装置"}
 
 
 def alarm_dict(r) -> dict:
@@ -53,7 +55,8 @@ class AlarmEngine:
     ):
         self.st, self.redis, self.pool, self.tags, self.consumer = st, redis, pool, tags, consumer
         self.rules = AlarmRules(st)
-        self.stats = {"alarms": 0, "errors": 0}
+        self.stats = {"alarms": 0, "errors": 0, "pdr": 0}
+        self._last_pdr_ts: int | None = None
 
     async def run(self) -> None:
         await self._init()
@@ -135,6 +138,20 @@ class AlarmEngine:
             )  # fmt: skip
             self.stats["alarms"] += 1
             await publish(self.redis, {"type": "alarm", "alarm": alarm_dict(row)})
+            if d.level == 1 and d.kind in PDR_TRIGGERS:
+                await self._pdr(d)
+
+    async def _pdr(self, d: AlarmDraft) -> None:
+        """事故追忆触发：一次事故只生成一条，触发时刻取第一个事故信号。"""
+        if self._last_pdr_ts is not None and 0 <= d.ts - self._last_pdr_ts < PDR_MERGE_MS:
+            return
+        self._last_pdr_ts = d.ts
+        row = await self.pool.fetchrow(
+            "INSERT INTO pdr (ts, title, bay) VALUES ($1, $2, $3) RETURNING id",
+            datetime.fromtimestamp(d.ts / 1000, UTC), d.text, d.bay,
+        )  # fmt: skip
+        self.stats["pdr"] += 1
+        await publish(self.redis, {"type": "pdr", "id": row["id"], "ts": d.ts, "title": d.text})
 
     def _bay_of(self, device: str) -> str | None:
         for b in self.st.bays:

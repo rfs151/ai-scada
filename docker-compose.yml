@@ -56,7 +56,10 @@ services:
     restart: unless-stopped
     environment:
       SIM_SPEED: ${SIM_SPEED:-60}
+      REDIS_URL: redis://redis:6379/0  # 仅用于仿真控制通道（故障注入），与 104 数据通道无关
       TZ: Asia/Shanghai
+    depends_on:
+      redis: { condition: service_healthy }
     healthcheck:
       # 检查 2404 端口处于 LISTEN（/proc/net/tcp 中 0x0964 状态 0A），不建立连接，避免子站日志噪音
       test: ["CMD-SHELL", "grep -qi ':0964 00000000:0000 0A' /proc/net/tcp"]

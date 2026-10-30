@@ -361,6 +361,11 @@ def _generate_points(s: Station) -> list[Point]:
                 a.add(Cat.DD, id=f"{bay.id}.E_EXP", name=f"{bay.name}上网电量", bay=bay.id, ref=line.id,
                       meas="E_EXP", unit="kWh")  # fmt: skip
 
+    # ---- 自动装置信号（追加在末尾，保持已有测点地址不变）
+    for bay in s.bays:
+        if bay.kind in ("bridge", "bus_tie"):
+            sp(bay.id, bay.name, "BZT", "备自投动作", bay.id)
+
     return a.points
 
 

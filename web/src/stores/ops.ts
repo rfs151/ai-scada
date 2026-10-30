@@ -14,6 +14,7 @@ export type BusMsg =
   | { type: 'alarm_ack'; ids: number[]; by: string; ts: number }
   | { type: 'tags'; tags: Tag[] }
   | { type: 'control'; session: ControlSession }
+  | { type: 'pdr'; id: number; ts: number; title: string }
 
 function loadMute(): boolean {
   try {
@@ -31,6 +32,8 @@ export const useOps = defineStore('ops', () => {
   const sessions = reactive<Record<string, ControlSession>>({})
   const muted = ref(loadMute())
   const loaded = ref(false)
+  /** 最新生成的事故追忆（推送通知用） */
+  const latestPdr = ref<{ id: number; ts: number; title: string } | null>(null)
   let started = false
 
   async function reload() {
@@ -68,6 +71,9 @@ export const useOps = defineStore('ops', () => {
         break
       case 'control':
         sessions[msg.session.id] = msg.session
+        break
+      case 'pdr':
+        latestPdr.value = { id: msg.id, ts: msg.ts, title: msg.title }
         break
     }
   }
@@ -117,7 +123,7 @@ export const useOps = defineStore('ops', () => {
   }
 
   return {
-    unacked, recent, tags, sessions, muted, loaded, counts, flashDevices, unackedPoints, tagsByDevice, groundNodes,
+    unacked, recent, tags, sessions, muted, loaded, latestPdr, counts, flashDevices, unackedPoints, tagsByDevice, groundNodes,
     start, reload, setMuted, ack, ackAll, putSession,
   } // prettier-ignore
 })

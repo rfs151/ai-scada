@@ -13,7 +13,7 @@ type ServerMsg =
   | { type: 'yx'; events: YxEvent[] }
   | { type: 'channel'; channels: Record<string, Channel> }
   | { type: 'error'; detail: string }
-  | { type: 'alarm' | 'alarm_ack' | 'tags' | 'control'; [k: string]: unknown }
+  | { type: 'alarm' | 'alarm_ack' | 'tags' | 'control' | 'pdr'; [k: string]: unknown }
 
 const PING_INTERVAL_MS = 5_000
 /** 超过该时间没收到任何消息，判定链路假死并主动重连（类似 104 规约的 t3 测试帧机制） */
@@ -112,6 +112,7 @@ export const useRealtime = defineStore('realtime', () => {
         case 'alarm_ack':
         case 'tags':
         case 'control':
+        case 'pdr':
           for (const fn of busListeners) fn(msg)
           break
       }

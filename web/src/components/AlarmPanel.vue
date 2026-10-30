@@ -3,8 +3,9 @@
  * 全局告警窗（底部停靠）：分级计数、未确认列表、确认、音响开关。
  * 事故/异常未确认时标题栏闪烁，确认后停止——对应调度台"告警确认"操作习惯。
  */
-import { computed, ref } from 'vue'
-import { NButton, useMessage } from 'naive-ui'
+import { computed, h, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { NButton, useMessage, useNotification } from 'naive-ui'
 import type { Alarm } from '../api/types'
 import { fmtTime } from '../lib/format'
 import { unlockAudio } from '../lib/sound'
@@ -14,6 +15,23 @@ import { useOps } from '../stores/ops'
 const ops = useOps()
 const auth = useAuth()
 const msg = useMessage()
+const notify = useNotification()
+const router = useRouter()
+
+// 事故追忆生成后提示，可直接跳转回放
+watch(
+  () => ops.latestPdr,
+  (p) => {
+    if (!p) return
+    const n = notify.create({
+      title: '事故追忆已生成',
+      content: `${fmtTime(p.ts)} ${p.title}`,
+      duration: 15000,
+      action: () =>
+        h(NButton, { size: 'small', type: 'primary', onClick: () => (n.destroy(), router.push(`/pdr/${p.id}`)) }, () => '回放'),
+    })
+  },
+)
 
 const open = ref(false)
 const tab = ref<'unacked' | 'recent'>('unacked')

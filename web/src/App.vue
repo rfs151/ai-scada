@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { darkTheme, NConfigProvider, NMessageProvider, type GlobalThemeOverrides } from 'naive-ui'
+import { darkTheme, NConfigProvider, NMessageProvider, NNotificationProvider, type GlobalThemeOverrides } from 'naive-ui'
 import AlarmPanel from './components/AlarmPanel.vue'
 import LoginDialog from './components/LoginDialog.vue'
 import { unlockAudio } from './lib/sound'
@@ -56,6 +56,7 @@ const themeOverrides: GlobalThemeOverrides = {
 <template>
   <n-config-provider abstract :theme="darkTheme" :theme-overrides="themeOverrides">
     <n-message-provider>
+      <n-notification-provider placement="bottom-right">
       <div class="shell">
         <header class="topbar">
           <div class="brand">
@@ -89,6 +90,7 @@ const themeOverrides: GlobalThemeOverrides = {
         <AlarmPanel />
         <LoginDialog />
       </div>
+      </n-notification-provider>
     </n-message-provider>
   </n-config-provider>
 </template>

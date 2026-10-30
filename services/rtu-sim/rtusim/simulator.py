@@ -18,6 +18,7 @@ from scadalib.iec104 import DPI, Quality
 from scadalib.model import Cat, Point, Station
 
 from . import grid
+from .automation import GROUND_3U0_V, Automation
 from .profiles import OU, profile_value, pv_clear_sky
 
 log = logging.getLogger(__name__)
@@ -81,6 +82,9 @@ class Simulator:
         self.u0_noise = {b.id: OU(1.2, theta=0.2, sigma=0.3, lo=0.2, rng=self.rng) for b in st.bays
                          if b.kind == "bus"}  # fmt: skip
 
+        self.grid_vm = float(st.grid["vm_pu"])
+        self.auto = Automation(self)
+
         self.values: dict[str, Value] = {}
         self.pf_ok = True
         self.last_step = time.monotonic()
@@ -128,6 +132,7 @@ class Simulator:
                 ]
         for t, pos in self.tap.items():
             self.net.trafo.loc[self.idx.trafo[t], "tap_pos"] = pos
+        self.net.ext_grid.loc[:, "vm_pu"] = self.grid_vm
 
         self.pf_ok = grid.run_pf(self.net)
         self._thermal(dt_sim_h, hour)
@@ -149,6 +154,15 @@ class Simulator:
         net, idx, n = self.net, self.idx, grid.nz
         q = Quality.GOOD if self.pf_ok else Quality.IV
         vals: dict[str, Value] = {}
+        # 故障期间的电气量：短路电流、故障母线电压跌落、接地母线 3U0
+        fault_i: dict[str, float] = {}
+        sag_buses: set[str] = set()
+        for bay, f in self.auto.faults.items():
+            fp = self.auto.feeders[bay]
+            if f.kind == "short" and self.switch[fp.cb] == DPI.ON:
+                fault_i[bay] = f.fault_ka * 1000
+                sag_buses.add(fp.bus_node)
+        grounded = self.auto.ground_buses()
 
         for p in self.st.points:
             if p.cat == Cat.YX:
@@ -188,10 +202,12 @@ class Simulator:
                 case "bus", ("UAB" | "UBC" | "UCA") as ph:
                     u = n(net.res_bus.at[idx.bus[bay.attrs["node"]], "vm_pu"]) * 10
                     unbalance = {"UAB": 1.0, "UBC": 1.0018, "UCA": 0.9986}[ph]  # 轻微三相不平衡
-                    v = u * unbalance
+                    v = u * unbalance * (0.55 if bay.attrs["node"] in sag_buses else 1.0)
                 case "bus", "U0":
                     energized = n(net.res_bus.at[idx.bus[bay.attrs["node"]], "vm_pu"]) > 0.1
                     v = self.u0_noise[bay.id].step() if energized else 0.0
+                    if energized and bay.attrs["node"] in grounded:
+                        v += GROUND_3U0_V  # 小电流接地系统单相接地：线电压不变，零序电压升高
                 case "bus", "F":
                     energized = n(net.res_bus.at[idx.bus[bay.attrs["node"]], "vm_pu"]) > 0.1
                     v = self.freq.x if energized else 0.0
@@ -205,7 +221,7 @@ class Simulator:
                         case "Q":
                             v = sign * n(r.q_from_mvar)
                         case "I":
-                            v = n(r.i_from_ka) * 1000
+                            v = fault_i.get(bay.id, n(r.i_from_ka) * 1000)
                         case "COS":
                             v = grid.cos_phi(n(r.p_from_mw), n(r.q_from_mvar))
                         case "PLIM":
@@ -239,6 +255,14 @@ class Simulator:
             self.on_yx(point, Value(state), self.rtu_now())
         self.changed.set()
 
+    def set_signal(self, pid: str, on: bool) -> None:
+        """保护 / 告警单点信号变位，立即以 SOE 上送。"""
+        if self.signals.get(pid) == on:
+            return
+        self.signals[pid] = on
+        if self.on_yx:
+            self.on_yx(self.st.point(pid), Value(on), self.rtu_now())
+
     def interlock_reason(self, eid: str, close: bool) -> str | None:
         """间隔层联锁（测控装置内置）：断路器合位时禁止操作同间隔刀闸（防止带负荷拉合刀闸）。"""
         e = self.st.equip(eid)
@@ -251,7 +275,8 @@ class Simulator:
                     return f"同间隔断路器 {other.id} 在合位"
         return None
 
-    async def operate_switch(self, eid: str, close: bool) -> bool:
+    async def operate_switch(self, eid: str, close: bool, source: str = "remote") -> bool:
+        """source：remote 遥控 / prot 保护跳闸 / recl 重合闸 / bzt 备自投 —— 自动装置据此判断是否放电。"""
         target = DPI.ON if close else DPI.OFF
         if self.switch[eid] == target:
             return True
@@ -264,6 +289,7 @@ class Simulator:
             else:
                 await asyncio.sleep(BREAKER_OP_S)
             self._set_switch(eid, target)
+            self.auto.on_switch(eid, close, source)
             return True
         finally:
             self.moving.discard(eid)
@@ -288,4 +314,30 @@ class Simulator:
 
     def set_pv_limit(self, bay: str, mw: float) -> None:
         self.pv_limit[bay] = mw
+        self.changed.set()
+
+    # ================================================================ 场景
+
+    def set_grid_voltage(self, vm_pu: float) -> None:
+        self.grid_vm = vm_pu
+        self.changed.set()
+
+    def reset_normal(self) -> None:
+        """恢复正常运行方式：消除故障、开关回到正常位置、档位/光伏限值/上级电压复原、信号复归。"""
+        self.auto.reset()
+        for e in self.st.equipment:
+            if e.is_switch:
+                normal = DPI.ON if e.normally_closed else DPI.OFF
+                if self.switch[e.id] != normal:
+                    self._set_switch(e.id, normal)
+        for pid, on in self.signals.items():
+            if on:
+                self.set_signal(pid, False)
+        for e in self.st.equipment:
+            if e.type == "transformer":
+                self.tap[e.id] = int(e.attrs.get("tap", 0))
+        for b in self.st.bays:
+            if b.kind == "pv":
+                self.pv_limit[b.id] = float(b.attrs["capacity_mw"])
+        self.grid_vm = float(self.st.grid["vm_pu"])
         self.changed.set()

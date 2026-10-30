@@ -18,7 +18,7 @@ from app.control.tags import TagStore
 from app.core.config import get_settings
 from app.realtime import bus, keys
 from app.realtime.hub import Hub
-from app.routers import alarms, auth, control, data, health, model, realtime, tags
+from app.routers import alarms, auth, control, data, health, model, pdr, realtime, sim, tags
 from app.routers import audit as audit_router
 from app.workers import Workers
 from scadalib.model import default_config_path, load_station
@@ -85,7 +85,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     for r in (health.router, model.router, data.router, realtime.router, auth.router, control.router,
-              tags.router, alarms.router, audit_router.router):  # fmt: skip
+              tags.router, alarms.router, audit_router.router, sim.router, pdr.router):  # fmt: skip
         app.include_router(r)
     return app
 

@@ -97,3 +97,21 @@ def test_limit_delay():
     # 恢复同样需持续
     assert r.on_analog("BUS1.UAB", 10.4, 0, 50_000) == []
     assert kinds(r.on_analog("BUS1.UAB", 10.45, 0, 60_000)) == [(5, "越限恢复")]
+
+
+def test_auto_device_classification(r):
+    pos = lambda p, v, t: {"p": p, "v": v, "old": None, "dev_t": t, "recv_t": t, "cot": 3}  # noqa: E731
+    sig = lambda p, t: {"p": p, "v": 1, "old": 0, "dev_t": t, "recv_t": t, "cot": 3}  # noqa: E731
+    # 重合闸：RECL 先于合闸上送
+    assert kinds(r.on_yx(sig("F02.RECL", 1000))) == [(1, "自动装置")]
+    assert kinds(r.on_yx(pos("912.POS", DPI.ON, 1060))) == [(4, "重合闸合闸")]
+    # 主变保护经事故总跳其他间隔的进线开关
+    assert kinds(r.on_yx(sig("STN.ACC", 20_000))) == [(1, "事故总")]
+    assert kinds(r.on_yx(pos("101.POS", DPI.OFF, 20_060))) == [(1, "事故跳闸")]
+    # 备自投：跳进线、合桥开关
+    assert kinds(r.on_yx(sig("B100.BZT", 40_000))) == [(1, "自动装置")]
+    assert kinds(r.on_yx(pos("102.POS", DPI.OFF, 40_050))) == [(4, "备自投变位")]
+    a = r.on_yx(pos("100.POS", DPI.ON, 40_200))
+    assert kinds(a) == [(4, "备自投变位")] and "备自投合闸" in a[0].text
+    # 时间窗外为普通变位
+    assert kinds(r.on_yx(pos("100.POS", DPI.OFF, 90_000))) == [(4, "变位")]

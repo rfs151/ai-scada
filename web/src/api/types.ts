@@ -172,3 +172,50 @@ export interface AuditEntry {
   detail: Record<string, unknown> | null
   ip: string | null
 }
+
+// ------------------------------------------------------------ P4：仿真场景、事故追忆
+
+export interface Scenario {
+  id: string
+  name: string
+  desc: string
+  target: 'feeder' | 'line' | 'trafo' | null
+  restore?: boolean
+}
+
+export interface SimState {
+  t: number
+  faults: { bay: string; name: string; kind: 'short' | 'ground' | 'trafo'; permanent: boolean }[]
+  line_lost: string[]
+  bzt: Record<string, { name: string; charged: boolean; charging_s: number | null; acting: boolean }>
+  reclose: Record<string, number>
+  events: { t: number; text: string }[]
+  grid_vm: number
+  outage_s: number
+}
+
+export interface SimInfo {
+  scenarios: Scenario[]
+  targets: Record<string, { id: string; name: string }[]>
+  state: SimState | null
+}
+
+export interface Pdr {
+  id: number
+  ts: number
+  title: string
+  bay: string | null
+  pre_s: number
+  post_s: number
+}
+
+export interface PdrReplay {
+  pdr: Pdr
+  start: number
+  end: number
+  /** 起始断面：点号 → [值, 品质] */
+  init: Record<string, [number, number]>
+  /** 遥测变化：[时标, 点号, 值, 品质]，按时间排序 */
+  analog: [number, string, number, number][]
+  events: YxEvent[]
+}

@@ -22,7 +22,13 @@ export function formatValue(p: Point, v: RtValue | undefined): string {
   if (!v) return '—'
   if (p.cat === 'YX') return p.double ? DPI_TEXT[v.v] ?? '?' : v.v ? '动作' : '复归'
   if (p.cat === 'DD') return Math.round(v.v).toLocaleString('zh-CN')
-  return v.v.toFixed(p.decimals)
+  return fixed(v.v, p.decimals)
+}
+
+/** 定点格式化，舍入为 0 的负数不显示负号（-0.001 → "0.00"） */
+export function fixed(v: number, decimals: number): string {
+  const s = v.toFixed(decimals)
+  return /^-0(\.0*)?$/.test(s) ? s.slice(1) : s
 }
 
 export type LimitState = 'hihi' | 'hi' | 'lo' | 'lolo' | null

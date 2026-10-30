@@ -16,6 +16,7 @@ from scadalib.iec104 import COT, DPI, RCS, CmdCheck, Iec104Server, InfoObject, T
 from scadalib.iec104.describe import describe
 from scadalib.model import Cat, Point, Station, default_config_path, load_station
 
+from .control import SimControl
 from .simulator import Simulator, Value
 
 log = logging.getLogger("rtusim")
@@ -78,7 +79,7 @@ class RtuHandler:
         log.info("execute %s → %s", p.id, obj.value)
         match p.meas:
             case "YK":
-                return await self.sim.operate_switch(p.ref, obj.value == DPI.ON)
+                return await self.sim.operate_switch(p.ref, obj.value == DPI.ON, source="remote")
             case "TAPCMD":
                 return await self.sim.change_tap(p.ref, obj.value == RCS.HIGHER)
             case "PSET":
@@ -94,9 +95,17 @@ class Rtu:
         self._yx_queue: asyncio.Queue[tuple[Point, Value, object]] = asyncio.Queue()
         sim.on_yx = lambda p, v, ts: self._yx_queue.put_nowait((p, v, ts))
 
-    async def run(self) -> None:
+    async def run(self, *extra) -> None:
         await self.server.start()
-        await asyncio.gather(self._sim_loop(), self._yx_loop())
+        await asyncio.gather(self._sim_loop(), self._yx_loop(), self.sim.auto.run(), *extra)
+
+    async def outage(self, seconds: float) -> None:
+        """模拟通道中断：断开全部链路并停止监听，到时恢复（主站将重连、总召）。"""
+        log.warning("simulated channel outage for %.0fs", seconds)
+        await self.server.stop()
+        await asyncio.sleep(seconds)
+        await self.server.start()
+        log.warning("channel restored")
 
     async def _sim_loop(self) -> None:
         loop = asyncio.get_running_loop()
@@ -153,7 +162,14 @@ def main() -> None:
 
     async def runner():
         loop = asyncio.get_running_loop()
-        task = asyncio.create_task(rtu.run())
+        extra = []
+        if url := os.environ.get("REDIS_URL"):
+            from redis.asyncio import Redis
+
+            extra.append(SimControl(sim, Redis.from_url(url, decode_responses=True), rtu.outage).run())
+        else:
+            log.info("REDIS_URL not set: simulation control channel disabled")
+        task = asyncio.create_task(rtu.run(*extra))
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, task.cancel)
         try:

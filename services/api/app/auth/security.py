@@ -26,6 +26,7 @@ PERMISSIONS: dict[str, set[str]] = {
     "tag": {"operator", "supervisor"},  # 挂牌/摘牌
     "ack": {"operator", "supervisor"},  # 告警确认
     "audit": {"supervisor", "admin"},  # 查看审计日志
+    "sim": {"operator", "supervisor", "admin"},  # 仿真场景注入（仅演示系统）
 }
 
 

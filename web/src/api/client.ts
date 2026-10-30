@@ -1,6 +1,6 @@
 import type {
-  Alarm, AuditEntry, AuthConfig, Channel, CheckResult, ControlSession, Frame, History, Point, Station, Tag, User,
-  YxEvent,
+  Alarm, AuditEntry, AuthConfig, Channel, CheckResult, ControlSession, Frame, History, Pdr, PdrReplay, Point, SimInfo,
+  SimState, Station, Tag, User, YxEvent,
 } from './types' // prettier-ignore
 
 export class ApiError extends Error {
@@ -103,6 +103,14 @@ export const api = {
   controlCancel: (id: string) => post<ControlSession>(`/api/control/sessions/${id}/cancel`),
   adjust: (point: string, value: string | number) =>
     post<{ ok: boolean; detail: string; elapsed_ms?: number }>('/api/control/adjust', { point, value }),
+
+  // ---- 仿真场景 / 事故追忆
+  simInfo: () => get<SimInfo>('/api/sim'),
+  simState: () => get<SimState | null>('/api/sim/state'),
+  simInject: (scenario: string, target?: string | null) =>
+    post<{ ok: boolean; detail: string }>('/api/sim/inject', { scenario, target }),
+  pdrList: (limit = 50) => get<Pdr[]>(`/api/pdr?limit=${limit}`),
+  pdr: (id: number) => get<PdrReplay>(`/api/pdr/${id}`),
 
   // ---- 审计
   audit: (limit = 300, action?: string) => {
