@@ -11,6 +11,9 @@ async def station(request: Request) -> dict:
         "name": st.name,
         "ca": st.ca,
         "voltage_levels": st.voltage_levels,
+        # 拓扑着色所需：电源点（上级电网等值节点）与各连接节点的电压等级
+        "sources": [st.grid["node"]],
+        "nodes": st.node_vl(),
         "bays": [
             {
                 "id": b.id,
@@ -18,7 +21,14 @@ async def station(request: Request) -> dict:
                 "kind": b.kind,
                 "vl": b.vl,
                 "equipment": [
-                    {"id": e.id, "type": e.type, "name": e.name, "vl": e.vl, "nodes": e.nodes}
+                    {
+                        "id": e.id,
+                        "type": e.type,
+                        "name": e.name,
+                        "vl": e.vl,
+                        "nodes": e.nodes,
+                        **({"normal": "closed" if e.normally_closed else "open"} if e.is_switch else {}),
+                    }
                     for e in b.equipment
                 ],  # fmt: skip
             }

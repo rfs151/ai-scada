@@ -1,10 +1,17 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { darkTheme, NConfigProvider, NMessageProvider, type GlobalThemeOverrides } from 'naive-ui'
+import AlarmPanel from './components/AlarmPanel.vue'
+import LoginDialog from './components/LoginDialog.vue'
+import { unlockAudio } from './lib/sound'
 import { nav } from './router'
+import { useAuth } from './stores/auth'
+import { useOps } from './stores/ops'
 import { useRealtime } from './stores/realtime'
 
 const rt = useRealtime()
+const auth = useAuth()
+const ops = useOps()
 const clock = ref('')
 let timer: number | undefined
 
@@ -16,7 +23,11 @@ function updateClock() {
 }
 
 onMounted(() => {
+  ops.start() // 先注册推送监听，再建立连接
   rt.start()
+  void auth.loadConfig()
+  // 浏览器要求用户交互后才能播放声音：首次点击时解锁告警音响
+  window.addEventListener('pointerdown', unlockAudio, { once: true })
   updateClock()
   timer = window.setInterval(updateClock, 250)
 })
@@ -43,7 +54,7 @@ const themeOverrides: GlobalThemeOverrides = {
 </script>
 
 <template>
-  <n-config-provider :theme="darkTheme" :theme-overrides="themeOverrides">
+  <n-config-provider abstract :theme="darkTheme" :theme-overrides="themeOverrides">
     <n-message-provider>
       <div class="shell">
         <header class="topbar">
@@ -64,12 +75,19 @@ const themeOverrides: GlobalThemeOverrides = {
               <span v-if="rt.state === 'open' && rt.rttMs !== null" class="mono dim">{{ rt.rttMs }} ms</span>
             </span>
             <span class="mono clock">{{ clock }}</span>
+            <span v-if="auth.user" class="user" :title="`${auth.user.username} · ${auth.user.role_cn}`">
+              {{ auth.user.name }}<span class="role">{{ auth.user.role_cn }}</span>
+              <button class="logout" @click="auth.logout()">退出</button>
+            </span>
+            <button v-else class="login" @click="auth.showLogin = true">登录</button>
           </div>
         </header>
 
         <main class="content">
           <router-view />
         </main>
+        <AlarmPanel />
+        <LoginDialog />
       </div>
     </n-message-provider>
   </n-config-provider>
@@ -153,12 +171,43 @@ const themeOverrides: GlobalThemeOverrides = {
 .dim {
   color: var(--text-dim);
 }
+.user {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.role {
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 3px;
+  background: #1b2742;
+  color: var(--text-dim);
+}
+.login,
+.logout {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.logout {
+  color: var(--text-dim);
+}
+.login:hover,
+.logout:hover {
+  border-color: var(--accent);
+}
 .clock {
   font-size: 14px;
   color: var(--text);
 }
 .content {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 16px;
 }
@@ -174,7 +223,8 @@ const themeOverrides: GlobalThemeOverrides = {
   }
   .title,
   .clock,
-  .link-text {
+  .link-text,
+  .role {
     display: none;
   }
   .nav-item {

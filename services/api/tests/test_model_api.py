@@ -8,6 +8,10 @@ def test_station_and_points():
     with TestClient(app) as c:
         st = c.get("/api/model/station").json()
         assert st["ca"] == 1 and any(b["kind"] == "transformer" for b in st["bays"])
+        assert st["sources"] == ["GRID"]
+        assert st["nodes"]["T1_H"] == "HV" and st["nodes"]["T1_L"] == "LV" and st["nodes"]["BUS1"] == "LV"
+        eq = {e["id"]: e for b in st["bays"] for e in b["equipment"]}
+        assert eq["100"]["normal"] == "open" and eq["101"]["normal"] == "closed" and "normal" not in eq["T1"]
         yk = c.get("/api/model/points", params={"cat": "YK"}).json()
         assert yk and all(p["cat"] == "YK" and p["ioa"] >= 0x6001 for p in yk)
         f01 = c.get("/api/model/points", params={"bay": "F01"}).json()

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { NDrawer, NDrawerContent, NEmpty, NRadioButton, NRadioGroup, NSpin } from 'naive-ui'
+import { NEmpty, NSpin } from 'naive-ui'
 import type { Point } from '../api/types'
-import TrendChart from '../components/TrendChart.vue'
+import TrendDrawer from '../components/TrendDrawer.vue'
 import { fmtTime, formatValue, LIMIT_TEXT, limitState, qualityFlags } from '../lib/format'
 import { useModel } from '../stores/model'
 import { useRealtime } from '../stores/realtime'
@@ -13,7 +13,6 @@ onMounted(() => model.load())
 
 const selectedBay = ref('ALL')
 const trendPoint = ref<Point | null>(null)
-const trendMinutes = ref(60)
 
 const groups = computed(() => {
   const st = model.station
@@ -142,24 +141,7 @@ function bayStatus(bayId: string) {
       </template>
     </section>
 
-    <n-drawer :show="!!trendPoint" :width="720" placement="right" @update:show="(v: boolean) => !v && (trendPoint = null)">
-      <n-drawer-content v-if="trendPoint" :title="trendPoint.name" closable>
-        <div class="trend-head">
-          <span class="mono big">{{ formatValue(trendPoint, rt.values[trendPoint.id]) }}</span>
-          <span class="dim">{{ trendPoint.unit }}</span>
-          <n-radio-group v-model:value="trendMinutes" size="small" class="range">
-            <n-radio-button :value="30">30分钟</n-radio-button>
-            <n-radio-button :value="60">1小时</n-radio-button>
-            <n-radio-button :value="360">6小时</n-radio-button>
-            <n-radio-button :value="1440">24小时</n-radio-button>
-          </n-radio-group>
-        </div>
-        <div class="dim small">点号 {{ trendPoint.id }} · IOA {{ trendPoint.ioa }} (0x{{ trendPoint.ioa.toString(16).toUpperCase() }}) · 死区 {{ trendPoint.deadband }} {{ trendPoint.unit }}</div>
-        <div class="trend-box">
-          <TrendChart :key="`${trendPoint.id}-${trendMinutes}`" :point="trendPoint" :minutes="trendMinutes" />
-        </div>
-      </n-drawer-content>
-    </n-drawer>
+    <TrendDrawer :point="trendPoint" @close="trendPoint = null" />
   </div>
 </template>
 
@@ -360,23 +342,6 @@ tr.clickable:hover td {
   50% {
     opacity: 0.3;
   }
-}
-.trend-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-.big {
-  font-size: 26px;
-  font-weight: 600;
-}
-.range {
-  margin-left: auto;
-}
-.trend-box {
-  height: 380px;
-  margin-top: 12px;
 }
 @media (max-width: 720px) {
   .layout {

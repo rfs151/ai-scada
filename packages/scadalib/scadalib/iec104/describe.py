@@ -62,7 +62,30 @@ def _q(q: Quality) -> str:
     return f" [{','.join(flags)}]" if flags else ""
 
 
+def _qoi(q: int) -> str:
+    """召唤限定词 QOI：20 站召唤（总召），21~36 第 1~16 组召唤。"""
+    if q == 20:
+        return "QOI=20 总召"
+    if 21 <= q <= 36:
+        return f"QOI={q} 第{q - 20}组召唤"
+    return f"QOI={q}"
+
+
+_FRZ_CN = {0: "", 1: " 冻结不复位", 2: " 冻结带复位", 3: " 复位"}
+
+
+def _qcc(q: int) -> str:
+    """电度召唤限定词 QCC：低 6 位 RQT（5 总请求，1~4 第 1~4 组），高 2 位 FRZ（冻结/复位）。"""
+    rqt, frz = q & 0x3F, q >> 6
+    what = "总请求" if rqt == 5 else (f"第{rqt}组" if 1 <= rqt <= 4 else "")
+    return f"QCC={q} {what}{_FRZ_CN[frz]}".rstrip()
+
+
 def _obj(t: TypeID, o: InfoObject, tz: tzinfo) -> str:
+    if t in (TypeID.C_IC_NA_1, TypeID.C_CI_NA_1):
+        # 站级命令，标准规定 IOA=0；不为 0 时照实显示，便于排查对端实现问题
+        text = _qoi(o.value) if t == TypeID.C_IC_NA_1 else _qcc(o.value)
+        return text if o.ioa == 0 else f"IOA={o.ioa} {text}"
     v = o.value
     if isinstance(v, DPI):
         v = {
@@ -78,11 +101,7 @@ def _obj(t: TypeID, o: InfoObject, tz: tzinfo) -> str:
     elif t == TypeID.C_CS_NA_1:
         v = v.astimezone(tz).strftime("%H:%M:%S.%f")[:-3]
     s = f"{o.ioa}={v}{_q(o.quality)}"
-    if t.name.startswith("C_") and t not in (
-        TypeID.C_IC_NA_1,
-        TypeID.C_CI_NA_1,
-        TypeID.C_CS_NA_1,
-    ):
+    if t.name.startswith("C_") and t != TypeID.C_CS_NA_1:
         s += " 选择" if o.select else " 执行"
     if o.time:
         s += " @" + o.time.astimezone(tz).strftime("%H:%M:%S.%f")[:-3]

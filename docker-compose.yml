@@ -104,6 +104,9 @@ services:
       REDIS_URL: redis://redis:6379/0
       APP_VERSION: ${IMAGE_TAG:-dev}
       TZ: Asia/Shanghai
+      JWT_SECRET: ${JWT_SECRET:-}
+      DEMO_MODE: ${DEMO_MODE:-true}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-scada@2024}
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }

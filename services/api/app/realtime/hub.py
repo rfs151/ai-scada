@@ -2,7 +2,7 @@
 
 - 客户端按画面订阅测点（或 "*" 全部），只推送订阅范围内的变化
 - 变化先在每个客户端缓冲区合并（同一测点只保留最新值），每 FLUSH_S 发送一帧，避免推送风暴
-- 遥信变位事件、通道状态广播给所有客户端
+- 遥信变位事件、通道状态、业务事件总线（告警/挂牌/遥控进度）广播给所有客户端
 - 慢客户端：缓冲区以测点为键，天然有上限（≤ 测点数），不会无限堆积
 """
 
@@ -29,6 +29,7 @@ class Client:
     points: set[str] | None = field(default_factory=set)  # None = 全部
     pending: dict[str, dict] = field(default_factory=dict)
     events: list[dict] = field(default_factory=list)
+    bus: list[dict] = field(default_factory=list)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def wants(self, pid: str) -> bool:
@@ -73,7 +74,7 @@ class Hub:
     async def _start_ids(self) -> dict[str, str]:
         # 不用 "$"：某个流本轮无数据时下一轮仍从 "$" 读，两次调用之间到达的消息会丢失
         out = {}
-        for s in (keys.RT_CHANGES, keys.YX_EVENTS):
+        for s in (keys.RT_CHANGES, keys.YX_EVENTS, keys.EV_BUS):
             last = await self.redis.xrevrange(s, count=1)
             out[s] = last[0][0] if last else "0-0"
         return out
@@ -100,24 +101,31 @@ class Hub:
                             for c in self.clients:
                                 if c.wants(pid):
                                     c.pending[pid] = upd
-                else:
+                elif stream == keys.YX_EVENTS:
                     evts = [json.loads(f["e"]) for _, f in entries]
                     for c in self.clients:
                         c.events.extend(evts)
+                else:
+                    msgs = [json.loads(f["m"]) for _, f in entries]
+                    for c in self.clients:
+                        c.bus.extend(msgs)
 
     async def _flush_loop(self) -> None:
         while True:
             await asyncio.sleep(FLUSH_S)
             for c in list(self.clients):
-                if not c.pending and not c.events:
+                if not c.pending and not c.events and not c.bus:
                     continue
                 values, c.pending = c.pending, {}
                 events, c.events = c.events, []
+                msgs, c.bus = c.bus, []
                 try:
                     if values:
                         await c.send({"type": "rt", "values": values})
                     if events:
                         await c.send({"type": "yx", "events": events})
+                    for m in msgs:  # 告警、挂牌、遥控进度：原样转发
+                        await c.send(m)
                     self.stats["frames_sent"] += 1
                 except Exception:  # noqa: BLE001 - 连接已断开，由 WS 处理函数清理
                     self.remove(c)

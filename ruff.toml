@@ -12,4 +12,8 @@ known-first-party = ["app", "scadalib", "rtusim", "fep"]
 
 [lint.flake8-bugbear]
 # 不可变的 frozen dataclass 可安全用作默认参数
-extend-immutable-calls = ["scadalib.iec104.link.LinkParams", "scadalib.iec104.client.Cycles"]
+extend-immutable-calls = [
+    "scadalib.iec104.link.LinkParams", "scadalib.iec104.client.Cycles",
+    # FastAPI 依赖注入写法
+    "fastapi.Depends", "fastapi.Query", "app.auth.deps.require",
+]

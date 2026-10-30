@@ -9,6 +9,7 @@
     rt        {"values": {...}}            合帧增量（200ms）
     yx        {"events": [...]}            遥信变位
     channel   {"channels": {...}}          通道状态（2s）
+    alarm / alarm_ack / tags / control    业务事件（见 app/realtime/bus.py）
 """
 
 import asyncio

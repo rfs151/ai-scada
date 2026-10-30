@@ -113,3 +113,16 @@ def test_describe():
     text = describe(raw)
     assert "M_DP_TB_1" in text and "突发" in text and "5=分" in text and "11:08:58.728" in text
     assert describe(apci.encode_u(apci.UFunc.STARTDT_ACT)) == "U  STARTDT 激活"
+
+
+def test_describe_interrogation_qualifiers():
+    def text(t, q, cot=COT.ACTIVATION, ioa=0):
+        return describe(apci.encode_i(71, 6901, A.encode(A.Asdu(t, cot, 1, [A.InfoObject(ioa, q)]))))
+
+    assert text(TypeID.C_IC_NA_1, 20).endswith("总召唤 激活 CA=1  QOI=20 总召")
+    assert text(TypeID.C_IC_NA_1, 22).endswith("QOI=22 第2组召唤")
+    t = text(TypeID.C_CI_NA_1, 5, COT.ACTIVATION_CON)
+    assert t.endswith("电度召唤 激活确认 CA=1  QCC=5 总请求") and "0=5" not in t
+    assert text(TypeID.C_CI_NA_1, 0x45).endswith("QCC=69 总请求 冻结不复位")
+    assert text(TypeID.C_CI_NA_1, 0x85).endswith("QCC=133 总请求 冻结带复位")
+    assert text(TypeID.C_IC_NA_1, 20, ioa=7).endswith("IOA=7 QOI=20 总召")

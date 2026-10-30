@@ -13,6 +13,7 @@ type ServerMsg =
   | { type: 'yx'; events: YxEvent[] }
   | { type: 'channel'; channels: Record<string, Channel> }
   | { type: 'error'; detail: string }
+  | { type: 'alarm' | 'alarm_ack' | 'tags' | 'control'; [k: string]: unknown }
 
 const PING_INTERVAL_MS = 5_000
 /** 超过该时间没收到任何消息，判定链路假死并主动重连（类似 104 规约的 t3 测试帧机制） */
@@ -41,6 +42,12 @@ export const useRealtime = defineStore('realtime', () => {
   let pingTimer: number | undefined
   let reconnectTimer: number | undefined
   let started = false
+  const busListeners: ((msg: { type: string }) => void)[] = []
+  const openListeners: (() => void)[] = []
+  /** 业务事件（告警、挂牌、遥控进度）监听 */
+  const onBus = (fn: (msg: { type: string }) => void) => busListeners.push(fn)
+  /** 推送通道（重新）建立时回调，用于刷新 REST 数据 */
+  const onOpen = (fn: () => void) => openListeners.push(fn)
 
   const serverNow = () => new Date(Date.now() + clockOffsetMs.value)
 
@@ -72,6 +79,7 @@ export const useRealtime = defineStore('realtime', () => {
       lastMsgAt.value = Date.now()
       // 演示站点规模小，全量订阅；后端支持按画面订阅（points 传点号列表）
       send({ type: 'subscribe', points: '*' })
+      for (const fn of openListeners) fn()
     }
 
     ws.onmessage = (ev) => {
@@ -99,6 +107,12 @@ export const useRealtime = defineStore('realtime', () => {
           break
         case 'channel':
           channels.value = msg.channels
+          break
+        case 'alarm':
+        case 'alarm_ack':
+        case 'tags':
+        case 'control':
+          for (const fn of busListeners) fn(msg)
           break
       }
     }
@@ -139,6 +153,6 @@ export const useRealtime = defineStore('realtime', () => {
   return {
     state, serverVersion, rttMs, clockOffsetMs, lastMsgAt, reconnects,
     values, changedAt, channels, yxEvents, rxUpdates,
-    serverNow, start, stop,
+    serverNow, start, stop, onBus, onOpen,
   } // prettier-ignore
 })

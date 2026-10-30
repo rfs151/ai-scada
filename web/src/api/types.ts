@@ -29,6 +29,8 @@ export interface Equipment {
   name: string
   vl: string
   nodes: string[]
+  /** 开关正常运行方式 */
+  normal?: 'open' | 'closed'
 }
 
 export interface Bay {
@@ -44,6 +46,10 @@ export interface Station {
   name: string
   ca: number
   voltage_levels: Record<string, { name: string; vn_kv: number }>
+  /** 电源点连接节点 */
+  sources: string[]
+  /** 连接节点 → 电压等级 */
+  nodes: Record<string, string>
   bays: Bay[]
 }
 
@@ -83,4 +89,86 @@ export interface History {
   start: number
   end: number
   data: number[][]
+}
+
+// ------------------------------------------------------------ P3：用户、告警、挂牌、遥控、审计
+
+export interface User {
+  username: string
+  name: string
+  role: 'viewer' | 'operator' | 'supervisor' | 'admin'
+  role_cn: string
+  perms: string[]
+}
+
+export interface AuthConfig {
+  demo: boolean
+  password?: string
+  accounts?: { username: string; name: string; role: string; role_cn: string }[]
+}
+
+/** 告警：level 1 事故 / 2 异常 / 3 越限 / 4 变位 / 5 告知 */
+export interface Alarm {
+  id: number
+  ts: number
+  level: number
+  level_cn: string
+  kind: string
+  text: string
+  point: string | null
+  bay: string | null
+  device: string | null
+  value: number | null
+  suppressed: boolean
+  ack_by: string | null
+  ack_ts: number | null
+}
+
+export interface Tag {
+  id: number
+  device: string
+  kind: 'maint' | 'noclose' | 'ground'
+  kind_cn: string
+  node: string | null
+  note: string
+  created_by: string
+  created_at: number | null
+}
+
+export interface CheckResult {
+  ok: boolean
+  violations: { category: string; text: string }[]
+  rule: string | null
+  rule_desc: string | null
+  terms: { term: string; actual: string; ok: boolean }[]
+}
+
+export type SessionState = 'pending' | 'authorized' | 'selected' | 'done' | 'rejected' | 'failed' | 'cancelled' | 'expired'
+
+export interface ControlSession {
+  id: string
+  point: string
+  device: string
+  device_name: string
+  action: 'open' | 'close'
+  action_cn: string
+  state: SessionState
+  state_cn: string
+  operator: User
+  supervisor: User | null
+  remaining_s: number | null
+  check: CheckResult | null
+  steps: { t: number; step: string; ok: boolean; detail: string; user: string | null }[]
+}
+
+export interface AuditEntry {
+  id: number
+  ts: number
+  username: string | null
+  role: string | null
+  action: string
+  target: string
+  ok: boolean
+  detail: Record<string, unknown> | null
+  ip: string | null
 }

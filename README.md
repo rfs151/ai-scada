@@ -3,7 +3,7 @@
 电力系统 SCADA 演示系统：仿真 110kV 变电站经 **IEC 60870-5-104** 规约接入，主站完成采集、实时处理、告警/SOE、遥控（选择-返校-执行 + 五防）、一次接线图拓扑着色与事故追忆。
 
 > 完整设计见 [docs/开发方案.md](docs/开发方案.md)，点表见 [docs/点表.csv](docs/点表.csv)。
-> 进度：**P0 骨架** ✅ · **P1 数据链路** ✅ · P2 接线图 · P3 告警/遥控/五防 · P4 故障场景
+> 进度：**P0 骨架** ✅ · **P1 数据链路** ✅ · **P2 接线图** ✅ · **P3 告警/遥控/五防** ✅ · P4 故障场景
 
 ## 架构
 
@@ -45,6 +45,24 @@
 - 刀闸 3s 行程（双点"中间态"）、OLTC 5s/档、IEC 60076-7 顶层油温模型、电度积分
 - RTU 时钟带初始偏差，主站对时后校正；间隔层联锁（断路器合位禁止操作同间隔刀闸）
 
+**一次接线图（`web/src/diagram`、`web/src/lib/topology.ts`）**
+- 图模分离：布局文件只存坐标和模型引用（设备编号 / 连接节点 / 点号），`layout.test.ts` 对照模型与点表做图模一致性校验
+- 拓扑着色：按 CIM 连接节点建图，从电源点 BFS 求带电范围；接地范围经开关、线路传递但不穿越主变；带电合接地刀标红闪烁；开关中间态/不定态按不导通处理
+- 配色：110kV 朱红、10kV 绛红（Q/GDW 624），失电灰；开关红合绿分，10kV 手车断路器、主变 OLTC 符号
+- 潮流箭头按有功方向与大小动画；量测越限变色、品质 NT/IV 灰显；变位闪烁；点击设备看台账/位置/运行方式/SOE，点击量测看趋势
+
+**告警（`services/api/app/alarm`）**
+- 五级：事故 / 异常 / 越限 / 变位 / 告知（告知自动确认）；全局告警窗分级计数、未确认闪烁、事故/异常音响，确认后设备停闪
+- 越限：上限/上上限/下限/下下限，回差 = max(死区, 1% 限值)，越限与恢复均需持续 10s（越上上限立即告警），避免负荷在限值附近反复告警
+- 母线失压闭锁频率/零序告警；断路器分闸分类：遥控变位（带操作人/监护人）、保护动作 ±5s 内为事故跳闸、其余为非遥控变位
+- 检修挂牌间隔的告警自动抑制；光字牌按间隔点亮保护/告警信号
+
+**遥控与五防（`services/api/app/control`）**
+- 流程：五防校验 + 复诵设备编号 → 监护人（另一名监护员账号口令）确认 → 选择返校 → 30s 内执行；任一步可撤销，超时自动撤销
+- 五防：规则库表达式（`config/interlock.yaml`，如 `901=分 & 101=分 & 100=分`）+ 拓扑防误（模拟操作后判断带电合接地刀、接地线所在节点须无电）+ 挂牌闭锁（检修 / 禁止合闸）；选择和执行前各复核一次
+- 遥调：主变升降档、光伏有功设定；临时接地线挂牌参与拓扑着色
+- 认证：PBKDF2 口令 + JWT；访客只读 / 调度员 / 监护员 / 管理员；登录限流；登录、遥控每一步、挂牌、告警确认全部写审计日志
+
 **实时与历史**
 - 前置：遥测死区在 RTU 侧、变化检测在前置侧；通道中断全站品质置 NT，恢复后总召刷新
 - 历史：Redis Stream 消费组 + 批量 COPY，写库成功才 ACK（至少一次），重启先处理未确认消息
@@ -71,6 +89,7 @@ make points     # 导出点表 docs/点表.csv
    - `SITE_ADDRESS=你的域名`（DNS 指向 VPS，Caddy 自动签发 HTTPS 证书）
    - `IMAGE_PREFIX=ghcr.io/<github用户名小写>/<仓库名小写>`
    - `POSTGRES_PASSWORD=<强密码>`
+   - `JWT_SECRET=<openssl rand -hex 32>`；公开演示保留 `DEMO_MODE=true`（登录框展示演示账号），否则设为 `false` 并修改口令
 2. GitHub 仓库设置：Variables `DEPLOY_ENABLED=true`；Secrets `VPS_HOST` / `VPS_USER` / `VPS_SSH_KEY`；GHCR 包设为 public（或在 VPS 上 `docker login ghcr.io`）。
 3. 推送到 `main`：CI 测试 → 构建 api / fep / rtu-sim / gateway 镜像 → 上传 compose 文件 → `docker compose pull && up -d`。
 
@@ -82,4 +101,8 @@ VPS 只开放 80/443；数据库、Redis 和 104 端口仅在 compose 内网可�
 - `GET /api/model/station` · `GET /api/model/points?cat=&bay=` 厂站模型与点表
 - `GET /api/realtime?ids=` 实时快照 · `GET /api/history/{点号}?start=&end=` 历史曲线
 - `GET /api/events/yx` SOE · `GET /api/channels` 通道状态 · `GET /api/channels/{通道}/frames?after=` 报文
-- `WS /ws/realtime` 订阅推送（协议见 `services/api/app/routers/realtime.py`）
+- `WS /ws/realtime` 订阅推送（协议见 `services/api/app/routers/realtime.py`），另推送告警 / 确认 / 挂牌 / 遥控进度
+- `POST /api/auth/login` 登录 · `GET /api/auth/me`
+- `GET /api/alarms` 告警查询 · `GET /api/alarms/active` · `POST /api/alarms/ack` 确认
+- `GET /api/control/check` 五防预校验 · `POST /api/control/sessions` 发起遥控，`/{id}/supervise|select|execute|cancel` · `POST /api/control/adjust` 遥调
+- `GET|POST /api/tags` · `DELETE /api/tags/{id}` 挂牌 · `GET /api/audit` 审计（监护员/管理员）
