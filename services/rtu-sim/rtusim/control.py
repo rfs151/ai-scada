@@ -74,6 +74,10 @@ class SimControl:
                 return auto.inject_trafo_fault(_need(target))
             case "line_loss":
                 return auto.lose_line(_need(target))
+            case "meas_invert" | "meas_freeze" | "meas_scale":
+                detail = sim.inject_meas_fault(_need(target), scenario.removeprefix("meas_"))
+                auto._log(detail)
+                return detail
             case "overvoltage":
                 sim.set_grid_voltage(HIGH_GRID_VM)
                 auto._log(f"上级 220kV 站 110kV 母线电压升高至 {HIGH_GRID_VM:.3f} pu")
@@ -86,6 +90,7 @@ class SimControl:
                 return f"104 通道中断 {OUTAGE_S:.0f} 秒"
             case "clear_faults":
                 sim.set_grid_voltage(float(sim.st.grid["vm_pu"]))
+                sim.meas_faults.clear()
                 return auto.clear_faults()
             case "reset":
                 sim.reset_normal()
@@ -105,6 +110,7 @@ class SimControl:
     async def _publish_state(self) -> None:
         st = self.sim.auto.status()
         st["grid_vm"] = self.sim.grid_vm
+        st["meas_faults"] = {pid: kind for pid, (kind, _) in self.sim.meas_faults.items()}
         remaining = (self.outage_until or 0) - time.monotonic()
         st["outage_s"] = round(remaining) if remaining > 0 else 0
         st["t"] = int(time.time() * 1000)

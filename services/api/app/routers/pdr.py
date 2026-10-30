@@ -7,8 +7,14 @@
 import json
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
 
+from app import audit
+from app.auth.deps import client_ip, optional_user
+from app.auth.security import User
+from app.brief import facts as brief_facts
+from app.brief import llm as brief_llm
 from app.realtime import keys
 from scadalib.model import Cat
 
@@ -30,12 +36,21 @@ async def list_pdr(request: Request, limit: int = Query(50, ge=1, le=500)) -> li
     return [_pdr_dict(r) for r in rows]
 
 
-@router.get("/{pdr_id}", summary="事故追忆回放数据")
-async def replay(pdr_id: int, request: Request) -> dict:
-    st = request.app.state
+async def get_pdr(st, pdr_id: int):
     r = await st.pool.fetchrow("SELECT * FROM pdr WHERE id = $1", pdr_id)
     if r is None:
         raise HTTPException(404, "追忆记录不存在")
+    return r
+
+
+@router.get("/{pdr_id}", summary="事故追忆回放数据")
+async def replay(pdr_id: int, request: Request) -> dict:
+    st = request.app.state
+    return await load_replay(st, await get_pdr(st, pdr_id))
+
+
+async def load_replay(st, r) -> dict:
+    """回放数据 = 起始断面 + 窗口内全部遥测变化与遥信事件（事故简报也基于这份数据）。"""
     start = r["ts"] - timedelta(seconds=r["pre_s"])
     end = min(r["ts"] + timedelta(seconds=r["post_s"]), datetime.now(UTC))
     yc = [p.id for p in st.station.points if p.cat == Cat.YC]
@@ -104,3 +119,63 @@ async def replay(pdr_id: int, request: Request) -> dict:
             for e in events
         ],
     }
+
+
+# ---------------------------------------------------------------- 事故简报
+
+LLM_COOLDOWN_S = 30
+_last_llm: dict[int, float] = {}
+
+
+async def _save_brief(st, pdr_id: int, brief: dict) -> dict:
+    await st.pool.execute(
+        "UPDATE pdr SET brief = $2 WHERE id = $1", pdr_id, json.dumps(brief, ensure_ascii=False)
+    )
+    return brief
+
+
+@router.get("/{pdr_id}/brief", summary="事故简报（首次查看时按规则生成并缓存）")
+async def get_brief(pdr_id: int, request: Request) -> dict:
+    st = request.app.state
+    r = await get_pdr(st, pdr_id)
+    if r["brief"]:
+        brief = json.loads(r["brief"]) if isinstance(r["brief"], str) else r["brief"]
+    else:
+        f = brief_facts.extract(st.station, await load_replay(st, r))
+        brief = await _save_brief(st, pdr_id, {"source": "template", "text": brief_facts.render(f), "facts": f,
+                                              "model": None, "at": _ms(datetime.now(UTC))})  # fmt: skip
+    return brief | {"llm_available": brief_llm.available()}
+
+
+class BriefReq(BaseModel):
+    llm: bool = True
+
+
+@router.post("/{pdr_id}/brief", summary="重新生成事故简报（llm=true 时由大模型撰写）")
+async def regen_brief(
+    pdr_id: int, req: BriefReq, request: Request, user: User | None = Depends(optional_user)
+) -> dict:
+    st = request.app.state
+    if user is None:
+        raise HTTPException(401, "请先登录")
+    r = await get_pdr(st, pdr_id)
+    f = brief_facts.extract(st.station, await load_replay(st, r))
+    brief = {"source": "template", "text": brief_facts.render(f), "facts": f, "model": None}
+    if req.llm:
+        if not brief_llm.available():
+            raise HTTPException(400, "未配置 ANTHROPIC_API_KEY，只能使用规则模板")
+        now = datetime.now(UTC).timestamp()
+        if now - _last_llm.get(pdr_id, 0) < LLM_COOLDOWN_S:
+            raise HTTPException(429, f"同一事故 {LLM_COOLDOWN_S} 秒内只能生成一次")
+        _last_llm[pdr_id] = now
+        try:
+            text, model = await brief_llm.write(f, st.settings.brief_model)
+        except brief_llm.BriefError as e:
+            await audit.write(st.pool, "pdr.brief", user=user, target=r["title"], ok=False,
+                              detail={"pdr": pdr_id, "error": str(e)}, ip=client_ip(request))  # fmt: skip
+            raise HTTPException(502, str(e)) from e
+        brief |= {"source": "llm", "text": text, "model": model}
+    brief["at"] = _ms(datetime.now(UTC))
+    await audit.write(st.pool, "pdr.brief", user=user, target=r["title"], detail={"pdr": pdr_id, "source": brief["source"]},
+                      ip=client_ip(request))  # fmt: skip
+    return await _save_brief(st, pdr_id, brief) | {"llm_available": brief_llm.available()}

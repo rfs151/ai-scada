@@ -181,11 +181,14 @@ export interface Scenario {
   desc: string
   target: 'feeder' | 'line' | 'trafo' | null
   restore?: boolean
+  group?: string
 }
 
 export interface SimState {
   t: number
   faults: { bay: string; name: string; kind: 'short' | 'ground' | 'trafo'; permanent: boolean }[]
+  /** 量测故障：点号 → invert / freeze / scale */
+  meas_faults?: Record<string, string>
   line_lost: string[]
   bzt: Record<string, { name: string; charged: boolean; charging_s: number | null; acting: boolean }>
   reclose: Record<string, number>
@@ -289,4 +292,36 @@ export interface AutoResetInfo {
   idle_min?: number
   next_at?: number | null
   last?: { t: number; tags_removed: number; alarms_acked: number } | null
+}
+
+/** 遥测数据校核 */
+export interface DataCheck {
+  t: number | null
+  balances: { key: string; name: string; in: number; out: number; diff: number; tol: number; ok: boolean; members: string[] }[]
+  bays: { bay: string; name: string; s_pq: number; s_ui: number; dev_pct: number; ok: boolean; sign_ok: boolean }[]
+  issues: { key: string; text: string; since: number; active: boolean; points: string[] }[]
+}
+
+/** 负荷预测 */
+export interface LoadForecast {
+  now: number
+  step_s: number
+  day_s: number
+  history_days: number
+  actual: { t: number; v: number | null }[]
+  forecast: { t: number; v: number | null }[]
+  backtest: {
+    day_start: number
+    series: { t: number; actual: number | null; forecast: number | null }[]
+    metrics: { accuracy: number; mape: number; max_err: number; points: number } | null
+  }
+}
+
+/** 事故简报 */
+export interface PdrBrief {
+  source: 'template' | 'llm'
+  text: string
+  model: string | null
+  at: number
+  llm_available: boolean
 }

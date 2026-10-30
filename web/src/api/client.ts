@@ -1,5 +1,5 @@
 import type {
-  Alarm, AuditEntry, AuthConfig, Channel, CheckResult, ControlSession, Frame, History, Pdr, PdrReplay, Point, Report,
+  Alarm, AuditEntry, AuthConfig, Channel, CheckResult, ControlSession, DataCheck, Frame, LoadForecast, PdrBrief, History, Pdr, PdrReplay, Point, Report,
   SimInfo, SimState, Station, Tag, User, YxEvent,
 } from './types' // prettier-ignore
 
@@ -121,6 +121,10 @@ export const api = {
   simState: () => get<SimState | null>('/api/sim/state'),
   simInject: (scenario: string, target?: string | null) =>
     post<{ ok: boolean; detail: string }>('/api/sim/inject', { scenario, target }),
+  datacheck: () => get<DataCheck>('/api/datacheck'),
+  loadForecast: () => get<LoadForecast>('/api/forecast/load'),
+  pdrBrief: (id: number) => get<PdrBrief>(`/api/pdr/${id}/brief`),
+  pdrBriefRegen: (id: number, llm: boolean) => post<PdrBrief>(`/api/pdr/${id}/brief`, { llm }),
   pdrList: (limit = 50) => get<Pdr[]>(`/api/pdr?limit=${limit}`),
   pdr: (id: number) => get<PdrReplay>(`/api/pdr/${id}`),
 

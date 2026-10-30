@@ -7,6 +7,7 @@ import { computed, onMounted, ref } from 'vue'
 import { NButton, NDatePicker, NRadioButton, NRadioGroup, NSpin, useMessage } from 'naive-ui'
 import { api } from '../api/client'
 import type { Report } from '../api/types'
+import ForecastPanel from '../components/ForecastPanel.vue'
 import LoadCurve from '../components/LoadCurve.vue'
 import { fixed } from '../lib/format'
 
@@ -142,6 +143,8 @@ const OPS: Record<string, string> = { 'control.execute': '遥控', 'control.adju
         <div class="pt">负荷曲线</div>
         <LoadCurve :report="report" />
       </section>
+
+      <ForecastPanel />
 
       <div class="grid">
         <section class="panel">

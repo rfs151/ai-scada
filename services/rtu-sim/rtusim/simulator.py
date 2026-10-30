@@ -12,8 +12,8 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
 
+from scadalib import simclock
 from scadalib.iec104 import DPI, Quality
 from scadalib.model import Cat, Point, Station
 
@@ -50,10 +50,10 @@ class Simulator:
         self.changed = asyncio.Event()  # 设备状态变化，主循环应立即重算潮流
 
         # ---- 时钟
-        tzinfo = ZoneInfo(tz)
-        now_local = datetime.now(tzinfo)
+        # 默认按 scadalib.simclock 对齐本地时间（主站据此换算仿真钟点）；start_hour 仅供测试固定钟点
+        self.tz = tz
         self._t0_real = time.time()
-        self._t0_hour = start_hour if start_hour is not None else now_local.hour + now_local.minute / 60
+        self._t0_hour = start_hour
         self.clock_offset_s = self.rng.choice([-1, 1]) * self.rng.uniform(0.8, 2.5)  # 未对时的 RTU 时钟偏差
         self.clock_synced_at: datetime | None = None
 
@@ -84,6 +84,9 @@ class Simulator:
 
         self.grid_vm = float(st.grid["vm_pu"])
         self.auto = Automation(self)
+        # 量测故障（测量回路问题，一次设备正常）：点号 → (类型, 参数)
+        #   invert CT 极性接反（有功、无功符号相反）/ freeze 变送器卡死（值不刷新）/ scale 量程设置错误
+        self.meas_faults: dict[str, tuple[str, float]] = {}
 
         self.values: dict[str, Value] = {}
         self.pf_ok = True
@@ -94,6 +97,8 @@ class Simulator:
     # ================================================================ 时钟
 
     def sim_hour(self) -> float:
+        if self._t0_hour is None:
+            return simclock.sim_hour(time.time(), self.speed, self.tz)
         return (self._t0_hour + (time.time() - self._t0_real) * self.speed / 3600) % 24
 
     def rtu_now(self) -> datetime:
@@ -238,8 +243,29 @@ class Simulator:
 
             if p.cat == Cat.YC and p.meas not in ("TAP", "TOIL", "LOAD", "PLIM", "COS", "F", "U0"):
                 v = self._noise(v)
+            if (mf := self.meas_faults.get(p.id)) is not None:
+                kind, arg = mf
+                v = -v if kind == "invert" else (arg if kind == "freeze" else v * arg)
             vals[p.id] = Value(round(v, 6) + 0.0 if p.cat == Cat.YC else int(v), q)  # +0.0 消除 -0.0
         self.values = vals
+
+    def inject_meas_fault(self, bay: str, kind: str) -> str:
+        """量测回路故障：CT 极性接反 → P、Q 反号；有功变送器卡死 → P 冻结；电流量程错误 → I × 1.25。"""
+        if bay not in {b.id for b in self.st.bays if b.kind in ("feeder", "pv")}:
+            raise ValueError(f"{bay} 不是出线间隔")
+        name = self.st.bay(bay).name
+        match kind:
+            case "invert":
+                self.meas_faults[f"{bay}.P"] = ("invert", 0.0)
+                self.meas_faults[f"{bay}.Q"] = ("invert", 0.0)
+                return f"{name} 测量 CT 极性接反（有功、无功符号相反）"
+            case "freeze":
+                self.meas_faults[f"{bay}.P"] = ("freeze", float(self.values[f"{bay}.P"].v))
+                return f"{name} 有功变送器卡死，数值不再刷新"
+            case "scale":
+                self.meas_faults[f"{bay}.I"] = ("scale", 1.25)
+                return f"{name} 电流量程设置错误（测量值偏大 25%）"
+        raise ValueError(f"未知量测故障 {kind}")
 
     # ================================================================ 设备操作
 
@@ -325,6 +351,7 @@ class Simulator:
     def reset_normal(self) -> None:
         """恢复正常运行方式：消除故障、开关回到正常位置、档位/光伏限值/上级电压复原、信号复归。"""
         self.auto.reset()
+        self.meas_faults.clear()
         for e in self.st.equipment:
             if e.is_switch:
                 normal = DPI.ON if e.normally_closed else DPI.OFF

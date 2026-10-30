@@ -1,6 +1,7 @@
 pyproject.toml
 scadalib/__init__.py
 scadalib/py.typed
+scadalib/simclock.py
 scadalib.egg-info/PKG-INFO
 scadalib.egg-info/SOURCES.txt
 scadalib.egg-info/dependency_links.txt
@@ -21,4 +22,5 @@ scadalib/model/topology.py
 tests/test_codec.py
 tests/test_interop_c104.py
 tests/test_link.py
+tests/test_simclock.py
 tests/test_topology.py

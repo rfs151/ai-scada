@@ -16,6 +16,7 @@ import asyncpg
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
 
+from app.alarm.datacheck import DataCheck
 from app.alarm.rules import LEVEL_CN, AlarmDraft, AlarmRules
 from app.control.tags import TagStore
 from app.realtime import keys
@@ -55,6 +56,7 @@ class AlarmEngine:
     ):
         self.st, self.redis, self.pool, self.tags, self.consumer = st, redis, pool, tags, consumer
         self.rules = AlarmRules(st)
+        self.datacheck = DataCheck(st)
         self.stats = {"alarms": 0, "errors": 0, "pdr": 0}
         self._last_pdr_ts: int | None = None
 
@@ -63,9 +65,7 @@ class AlarmEngine:
         await asyncio.gather(self._consume(), self._channel_loop())
 
     async def _init(self) -> None:
-        raw = await self.redis.hgetall(keys.RT_VALUES)
-        vals = {pid: (float(v["v"]), int(v["q"])) for pid, s in raw.items() for v in [json.loads(s)]}
-        self.rules.init_values(vals)
+        self.rules.init_values(await self._snapshot())
         for ch, info in (await read_channels(self.redis)).items():
             self.rules.channels[ch] = str(info.get("state"))
         for s in (keys.RT_CHANGES, keys.YX_EVENTS):
@@ -111,6 +111,7 @@ class AlarmEngine:
             try:
                 now = int(time.time() * 1000)
                 await self.emit(self.rules.tick(now))
+                await self.emit(self.datacheck.run(await self._snapshot(), now))
                 for ch, info in (await read_channels(self.redis)).items():
                     await self.emit(
                         self.rules.on_channel(ch, str(info.get("state")), now, str(info.get("detail", "")))
@@ -119,6 +120,10 @@ class AlarmEngine:
                 raise
             except Exception:  # noqa: BLE001
                 log.exception("alarm channel poll error")
+
+    async def _snapshot(self) -> dict[str, tuple[float, int]]:
+        raw = await self.redis.hgetall(keys.RT_VALUES)
+        return {pid: (float(v["v"]), int(v["q"])) for pid, s in raw.items() for v in [json.loads(s)]}
 
     async def emit(self, drafts: list[AlarmDraft]) -> None:
         if not drafts:

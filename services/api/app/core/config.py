@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     demo_password: str = "scada@2024"
     # 演示环境自动复位间隔（分钟），0 关闭；有人操作后推迟到空闲 10 分钟再复位
     auto_reset_min: float = 60
+    sim_speed: float = 60  # 仿真倍速（与子站 SIM_SPEED 一致）
+    brief_model: str = "claude-opus-5-5"  # 事故简报大模型（需 ANTHROPIC_API_KEY）
 
     # ---- 遥控
     control_session_s: float = 120.0  # 发起 → 执行的总时限

@@ -90,3 +90,20 @@ def test_energy_counters_increase(sim):
     e0 = v(sim, "F01.E_IMP")
     sim.step(60.0)  # 60s × 60 倍速 = 1 小时
     assert v(sim, "F01.E_IMP") - e0 == pytest.approx(v(sim, "F01.P") * 1000, rel=0.15)
+
+
+def test_measurement_faults(sim):
+    p0 = v(sim, "F03.P")
+    sim.inject_meas_fault("F03", "invert")
+    sim.step(1.0)
+    assert v(sim, "F03.P") < 0 and v(sim, "F03.Q") < 0  # CT 极性接反
+    sim.inject_meas_fault("F02", "freeze")
+    frozen = v(sim, "F02.P")
+    sim.inject_meas_fault("F01", "scale")
+    sim.net.load.loc[:, "p_mw"] *= 1.5  # 负荷变化
+    sim.step(1.0)
+    assert v(sim, "F02.P") == frozen
+    assert abs(v(sim, "F03.P")) > 0.5 * p0
+    sim.reset_normal()
+    sim.step(1.0)
+    assert v(sim, "F03.P") > 0 and v(sim, "F02.P") != frozen

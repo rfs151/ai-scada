@@ -111,6 +111,9 @@ services:
       DEMO_MODE: ${DEMO_MODE:-true}
       DEMO_PASSWORD: ${DEMO_PASSWORD:-scada@2024}
       AUTO_RESET_MIN: ${AUTO_RESET_MIN:-60}
+      SIM_SPEED: ${SIM_SPEED:-60}  # 与子站一致：报表与负荷预测据此换算仿真钟点
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}  # 可选：配置后事故简报可由大模型撰写
+      BRIEF_MODEL: ${BRIEF_MODEL:-claude-opus-5-5}
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }

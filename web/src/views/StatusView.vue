@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { NCard, NGrid, NGridItem, NTag } from 'naive-ui'
+import { api } from '../api/client'
 import { fetchHealth, type HealthReport } from '../api/health'
+import type { DataCheck } from '../api/types'
+import DataCheckCard from '../components/DataCheckCard.vue'
 import { useRealtime } from '../stores/realtime'
 
 const POLL_MS = 5_000
@@ -10,6 +13,7 @@ const rt = useRealtime()
 const report = ref<HealthReport | null>(null)
 const apiError = ref<string | null>(null)
 const lastPoll = ref<Date | null>(null)
+const dc = ref<DataCheck | null>(null)
 let timer: number | undefined
 let ctrl: AbortController | undefined
 
@@ -18,6 +22,7 @@ async function poll() {
   ctrl = new AbortController()
   try {
     report.value = await fetchHealth(ctrl.signal)
+    dc.value = await api.datacheck().catch(() => null)
     apiError.value = null
   } catch (e) {
     if ((e as Error).name === 'AbortError') return
@@ -152,6 +157,8 @@ const pipeline = computed(() => {
         </n-card>
       </n-grid-item>
     </n-grid>
+
+    <DataCheckCard :data="dc" />
 
     <n-card size="small" title="数据链路" class="pipe-card">
       <div class="pipe">

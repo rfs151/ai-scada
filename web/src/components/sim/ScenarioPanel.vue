@@ -45,6 +45,10 @@ watch(
 onBeforeUnmount(() => window.clearInterval(timer))
 
 const faults = computed(() => info.value?.scenarios.filter((s) => !s.restore) ?? [])
+const MEAS_CN: Record<string, string> = { invert: '极性接反', freeze: '卡死', scale: '量程错误' }
+const measFaults = computed(() =>
+  Object.entries(state.value?.meas_faults ?? {}).map(([pid, k]) => `${pid} ${MEAS_CN[k] ?? k}`),
+)
 const restores = computed(() => info.value?.scenarios.filter((s) => s.restore) ?? [])
 const options = (kind: string) => (info.value?.targets[kind] ?? []).map((t) => ({ label: t.name, value: t.id }))
 const recloseWaiting = computed(() => Object.entries(state.value?.reclose ?? {}).filter(([, s]) => s > 0))
@@ -110,6 +114,10 @@ const clock = (t: number) => new Date(t * 1000).toLocaleTimeString('zh-CN', { ho
               <n-tag v-for="l in state.line_lost" :key="l" size="small" type="error" class="ft">{{ l }} 线路失电</n-tag>
             </span>
           </div>
+          <div v-if="measFaults.length" class="row faults">
+            <span>量测故障</span>
+            <span><n-tag v-for="m in measFaults" :key="m" size="small" type="warning" class="ft">{{ m }}</n-tag></span>
+          </div>
           <div v-if="state.outage_s" class="row"><span>通道中断</span><n-tag size="small" type="error">剩余 {{ state.outage_s }}s</n-tag></div>
           <div v-if="Math.abs(state.grid_vm - 1.03) > 0.001" class="row">
             <span>上级电压</span><n-tag size="small" type="warning">{{ state.grid_vm.toFixed(3) }} pu</n-tag>
@@ -118,14 +126,19 @@ const clock = (t: number) => new Date(t * 1000).toLocaleTimeString('zh-CN', { ho
       </section>
 
       <!-- 场景 -->
-      <section v-for="s in faults" :key="s.id" class="card">
-        <div class="title">{{ s.name }}</div>
-        <div class="desc">{{ s.desc }}</div>
-        <div class="act">
-          <n-select v-if="s.target" v-model:value="target[s.target]" :options="options(s.target)" size="small" />
-          <n-button size="small" type="error" ghost :loading="busy === s.id" @click="inject(s)">注入</n-button>
+      <template v-for="(s, i) in faults" :key="s.id">
+        <div v-if="s.group && s.group !== faults[i - 1]?.group" class="group">
+          {{ s.group }} <span class="dim small">一次设备正常、测量回路有问题，由数据校核发现</span>
         </div>
-      </section>
+        <section class="card">
+          <div class="title">{{ s.name }}</div>
+          <div class="desc">{{ s.desc }}</div>
+          <div class="act">
+            <n-select v-if="s.target" v-model:value="target[s.target]" :options="options(s.target)" size="small" />
+            <n-button size="small" type="error" ghost :loading="busy === s.id" @click="inject(s)">注入</n-button>
+          </div>
+        </section>
+      </template>
       <section class="card restore">
         <div v-for="s in restores" :key="s.id" class="restore-row">
           <div>
@@ -148,6 +161,11 @@ const clock = (t: number) => new Date(t * 1000).toLocaleTimeString('zh-CN', { ho
 </template>
 
 <style scoped>
+.group {
+  margin: 14px 0 6px;
+  font-weight: 600;
+  font-size: 13px;
+}
 .note {
   font-size: 12px;
   color: var(--text-dim);

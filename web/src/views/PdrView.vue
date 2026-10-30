@@ -9,6 +9,7 @@ import { NButton, NEmpty, NSelect, NSlider, NSpin } from 'naive-ui'
 import { api } from '../api/client'
 import type { Pdr } from '../api/types'
 import SingleLine from '../components/diagram/SingleLine.vue'
+import BriefDrawer from '../components/pdr/BriefDrawer.vue'
 import PdrChart from '../components/pdr/PdrChart.vue'
 import { fmtTime } from '../lib/format'
 import { eventTime, Replay } from '../lib/replay'
@@ -25,6 +26,7 @@ const error = ref('')
 const cursor = ref(0)
 const playing = ref(false)
 const speed = ref(0.5)
+const showBrief = ref(false)
 const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 5].map((v) => ({ label: `${v}×`, value: v }))
 
 const id = computed(() => Number(route.params.id) || null)
@@ -149,7 +151,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         触发 {{ fmtTime(replay.trigger, true) }} · 窗口 −{{ replay.data.pdr.pre_s }}s ~ +{{ replay.data.pdr.post_s }}s ·
         {{ events.length }} 条 SOE · {{ replay.data.analog.length }} 条遥测变化
       </span>
+      <n-button v-if="id" size="small" class="brief-btn" @click="showBrief = true">事故简报</n-button>
     </div>
+    <BriefDrawer v-model:show="showBrief" :pdr-id="id" />
 
     <n-empty v-if="!list.length && !loading" class="center" description="暂无事故追忆：在接线图「故障注入」中注入故障后自动生成" />
     <div v-else-if="error" class="err">{{ error }}</div>
@@ -219,6 +223,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </template>
 
 <style scoped>
+.brief-btn {
+  margin-left: auto;
+}
 .page {
   display: flex;
   flex-direction: column;
