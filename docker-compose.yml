@@ -1,0 +1,99 @@
+# 生产部署编排。开发时叠加 docker-compose.dev.yml（见 Makefile）。
+# 网络分区：只有 gateway 对外暴露 80/443，数据库/Redis/采集链路都只在内网。
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: timescale/timescaledb:2.17.2-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-scada}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-scada}
+      TS_TUNE_MEMORY: 1GB          # 让 timescaledb-tune 按 1GB 内存调参，适配小 VPS
+      TS_TUNE_NUM_CPUS: "2"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./deploy/db/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits: { memory: 1g }
+    logging: *default-logging
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    # 实时库：允许丢失，关闭 RDB/AOF 持久化，内存上限 + LRU 淘汰
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits: { memory: 192m }
+    logging: *default-logging
+
+  api:
+    image: ${IMAGE_PREFIX:-ai-scada}-api:${IMAGE_TAG:-latest}
+    build:
+      context: ./services/api
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-scada}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-scada}
+      REDIS_URL: redis://redis:6379/0
+      APP_VERSION: ${IMAGE_TAG:-dev}
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health/live', timeout=3).status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits: { memory: 512m }
+    logging: *default-logging
+
+  gateway:
+    image: ${IMAGE_PREFIX:-ai-scada}-gateway:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-}
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { memory: 128m }
+    logging: *default-logging
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:

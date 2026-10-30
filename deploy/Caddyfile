@@ -1,0 +1,28 @@
+# SITE_ADDRESS=:80 时只走 HTTP（本地）；设为域名时 Caddy 自动申请并续期 Let's Encrypt 证书。
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# 后端：REST、WebSocket、OpenAPI 文档
+	@backend path /api/* /ws/* /docs /docs/* /openapi.json
+	handle @backend {
+		reverse_proxy api:8000
+	}
+
+	# 前端 SPA：带 hash 的静态资源长缓存，index.html 不缓存
+	handle {
+		root * /srv
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@pages not path /assets/*
+		header @pages Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}
