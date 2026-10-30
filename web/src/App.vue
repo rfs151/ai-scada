@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { darkTheme, NConfigProvider, NMessageProvider, type GlobalThemeOverrides } from 'naive-ui'
+import { nav } from './router'
 import { useRealtime } from './stores/realtime'
 
 const rt = useRealtime()
@@ -33,10 +34,12 @@ const themeOverrides: GlobalThemeOverrides = {
     borderColor: '#1f2b45',
     primaryColor: '#3b82f6',
     primaryColorHover: '#60a5fa',
+    modalColor: '#111a2e',
+    popoverColor: '#16213a',
   },
+  Drawer: { color: '#0f172a' },
 }
 
-const nav = [{ to: '/status', label: '系统状态' }]
 </script>
 
 <template>
@@ -52,12 +55,12 @@ const nav = [{ to: '/status', label: '系统状态' }]
           </div>
 
           <nav class="nav">
-            <router-link v-for="n in nav" :key="n.to" :to="n.to" class="nav-item">{{ n.label }}</router-link>
+            <router-link v-for="n in nav" :key="n.path" :to="n.path" class="nav-item">{{ n.title }}</router-link>
           </nav>
 
           <div class="status">
             <span class="link" :class="rt.state" :title="`重连 ${rt.reconnects} 次`">
-              <i class="dot" />{{ linkText[rt.state] }}
+              <i class="dot" /><span class="link-text">{{ linkText[rt.state] }}</span>
               <span v-if="rt.state === 'open' && rt.rttMs !== null" class="mono dim">{{ rt.rttMs }} ms</span>
             </span>
             <span class="mono clock">{{ clock }}</span>
@@ -99,8 +102,12 @@ const nav = [{ to: '/status', label: '系统状态' }]
   display: flex;
   gap: 4px;
   flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 .nav-item {
+  white-space: nowrap;
   padding: 6px 12px;
   border-radius: 4px;
   color: var(--text-dim);
@@ -161,11 +168,17 @@ const nav = [{ to: '/status', label: '系统状态' }]
   }
 }
 @media (max-width: 720px) {
-  .title {
+  .topbar {
+    gap: 12px;
+    padding: 0 12px;
+  }
+  .title,
+  .clock,
+  .link-text {
     display: none;
   }
-  .clock {
-    display: none;
+  .nav-item {
+    padding: 6px 8px;
   }
 }
 </style>

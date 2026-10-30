@@ -45,6 +45,9 @@ interface Row {
   detail: string[]
 }
 
+const CH_TEXT: Record<string, string> = { up: '运行', down: '中断', connecting: '连接中' }
+const ch = computed(() => rt.channels.rtu1)
+
 const rows = computed<Row[]>(() => {
   const c = report.value?.components
   const db = c?.database
@@ -82,6 +85,19 @@ const rows = computed<Row[]>(() => {
         : ['—'],
     },
     {
+      key: 'ch',
+      name: '104 通道 rtu1',
+      role: 'IEC 104 主站 ↔ 仿真子站',
+      ok: ch.value?.state === 'up',
+      detail: ch.value
+        ? [
+            `状态 ${CH_TEXT[String(ch.value.state)] ?? ch.value.state} · 持续 ${fmtUptime(Math.round((Date.now() - Number(ch.value.since)) / 1000))}`,
+            `收 I 帧 ${ch.value.rx_i ?? 0} · 发 S 帧 ${ch.value.tx_s ?? 0} · 未确认 ${ch.value.unacked ?? 0}/12`,
+            `总召 ${ch.value.gi ?? 0} 次${ch.value.gi_ms ? `（${ch.value.gi_ms} ms）` : ''} · 对时 ${ch.value.clock_sync ?? 0} 次`,
+          ]
+        : ['等待通道状态…'],
+    },
+    {
       key: 'ws',
       name: '实时推送',
       role: 'WebSocket · 心跳 / 断线重连',
@@ -89,7 +105,7 @@ const rows = computed<Row[]>(() => {
       detail: [
         rt.state === 'open' ? `往返时延 ${rt.rttMs ?? '…'} ms` : `状态 ${rt.state}`,
         `时钟偏差 ${Math.round(rt.clockOffsetMs)} ms`,
-        `重连 ${rt.reconnects} 次`,
+        `重连 ${rt.reconnects} 次 · 已接收 ${rt.rxUpdates} 条更新`,
       ],
     },
   ]
@@ -102,23 +118,27 @@ function fmtUptime(s: number) {
   return d ? `${d}天${h}时` : h ? `${h}时${m}分` : `${m}分${s % 60}秒`
 }
 
-const pipeline = [
-  { name: 'rtu-sim', desc: '仿真子站 · 潮流计算', phase: 'P1' },
-  { name: 'fep', desc: '前置采集 · IEC 104', phase: 'P1' },
-  { name: 'redis', desc: '实时库', phase: 'P0' },
-  { name: 'api', desc: 'SCADA 处理', phase: 'P0' },
-  { name: 'web', desc: '人机界面', phase: 'P0' },
-]
+const pipeline = computed(() => {
+  const chUp = ch.value?.state === 'up'
+  const c = report.value?.components
+  return [
+    { name: 'rtu-sim', desc: '仿真子站 · 潮流计算', ok: chUp },
+    { name: 'fep', desc: '前置采集 · IEC 104 主站', ok: chUp },
+    { name: 'redis', desc: '实时库 · 事件总线', ok: c?.redis?.status === 'ok' },
+    { name: 'api', desc: 'SCADA 服务 · 历史库写入', ok: !!report.value?.workers?.db_ready },
+    { name: 'web', desc: '人机界面 · WebSocket', ok: rt.state === 'open' },
+  ]
+})
 </script>
 
 <template>
   <div class="page">
     <div class="head">
       <h2>系统状态</h2>
-      <span class="mono dim" v-if="lastPoll">每 {{ POLL_MS / 1000 }}s 刷新 · {{ lastPoll.toLocaleTimeString() }}</span>
+      <span class="mono dim" v-if="lastPoll">每 {{ POLL_MS / 1000 }}s 刷新 · {{ lastPoll.toLocaleTimeString('zh-CN', { hour12: false }) }}</span>
     </div>
 
-    <n-grid cols="1 s:2 l:4" responsive="screen" :x-gap="12" :y-gap="12">
+    <n-grid cols="1 s:2 l:5" responsive="screen" :x-gap="12" :y-gap="12">
       <n-grid-item v-for="r in rows" :key="r.key">
         <n-card size="small" :class="['comp', r.ok ? 'ok' : 'bad']">
           <div class="comp-head">
@@ -136,10 +156,9 @@ const pipeline = [
     <n-card size="small" title="数据链路" class="pipe-card">
       <div class="pipe">
         <template v-for="(p, i) in pipeline" :key="p.name">
-          <div class="node" :class="{ todo: p.phase !== 'P0' }">
+          <div class="node" :class="{ todo: !p.ok }">
             <div class="mono">{{ p.name }}</div>
             <div class="dim small">{{ p.desc }}</div>
-            <div v-if="p.phase !== 'P0'" class="small phase">{{ p.phase }} 接入</div>
           </div>
           <span v-if="i < pipeline.length - 1" class="arrow">→</span>
         </template>
@@ -216,11 +235,7 @@ h2 {
 }
 .node.todo {
   border-style: dashed;
-  border-color: var(--deenergized);
-  opacity: 0.7;
-}
-.phase {
-  color: var(--warn);
+  border-color: var(--alarm);
 }
 .arrow {
   color: var(--text-dim);

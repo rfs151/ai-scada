@@ -45,17 +45,65 @@ services:
         limits: { memory: 192m }
     logging: *default-logging
 
-  api:
-    image: ${IMAGE_PREFIX:-ai-scada}-api:${IMAGE_TAG:-latest}
+  # 仿真子站：潮流仿真 + IEC 104 子站（2404 端口只在内网，对应"生产控制大区"不对外）
+  rtu-sim:
+    image: ${IMAGE_PREFIX:-ai-scada}-rtu-sim:${IMAGE_TAG:-latest}
     build:
-      context: ./services/api
+      context: .
+      dockerfile: services/rtu-sim/Dockerfile
       args:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-}
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-scada}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-scada}
+      SIM_SPEED: ${SIM_SPEED:-60}
+      TZ: Asia/Shanghai
+    healthcheck:
+      # 检查 2404 端口处于 LISTEN（/proc/net/tcp 中 0x0964 状态 0A），不建立连接，避免子站日志噪音
+      test: ["CMD-SHELL", "grep -qi ':0964 00000000:0000 0A' /proc/net/tcp"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits: { memory: 512m }
+    logging: *default-logging
+
+  # 前置采集：IEC 104 主站 → Redis 实时库
+  fep:
+    image: ${IMAGE_PREFIX:-ai-scada}-fep:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: services/fep/Dockerfile
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-}
+    restart: unless-stopped
+    environment:
+      RTU_HOST: rtu-sim
+      RTU_PORT: "2404"
+      REDIS_URL: redis://redis:6379/0
+      TZ: Asia/Shanghai
+    depends_on:
+      redis: { condition: service_healthy }
+      rtu-sim: { condition: service_started }
+    deploy:
+      resources:
+        limits: { memory: 192m }
+    logging: *default-logging
+
+  api:
+    image: ${IMAGE_PREFIX:-ai-scada}-api:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-scada}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-scada}
       REDIS_URL: redis://redis:6379/0
       APP_VERSION: ${IMAGE_TAG:-dev}
+      TZ: Asia/Shanghai
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }

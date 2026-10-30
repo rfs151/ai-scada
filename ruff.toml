@@ -1,0 +1,15 @@
+# 全仓库共用的 Python 代码规范
+line-length = 110
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "SIM"]
+# ASYNC109: 规约层的应答超时(t1、命令确认超时)是接口语义的一部分，保留 timeout 参数
+ignore = ["ASYNC109", "E501"]  # E501: 行宽交给 ruff format，SQL 等长字符串不强制折行
+
+[lint.isort]
+known-first-party = ["app", "scadalib", "rtusim", "fep"]
+
+[lint.flake8-bugbear]
+# 不可变的 frozen dataclass 可安全用作默认参数
+extend-immutable-calls = ["scadalib.iec104.link.LinkParams", "scadalib.iec104.client.Cycles"]

@@ -18,7 +18,7 @@ def test_live(client):
 
 
 def _fake_check(db_status: str):
-    async def fake(engine, redis):
+    async def fake(pool, redis):
         return {
             "database": {"status": db_status, "latency_ms": 1.0},
             "redis": {"status": "ok", "latency_ms": 0.5},

@@ -1,0 +1,11 @@
+# 本地开发 / CI：全部 Python 服务依赖 + 测试工具（各服务镜像只装自己的 requirements.txt）
+-r services/api/requirements.txt
+-r services/fep/requirements.txt
+-r services/rtu-sim/requirements.txt
+-e packages/scadalib
+pytest==8.3.4
+pytest-asyncio==0.25.0
+httpx==0.28.1
+ruff==0.8.4
+# 互操作测试：lib60870-C 的 Python 绑定
+c104==2.2.1

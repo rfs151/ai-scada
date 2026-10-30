@@ -1,10 +1,12 @@
 SHELL := /bin/bash
 DEV  := docker compose -f docker-compose.yml -f docker-compose.dev.yml
-API  := services/api
+VENV := .venv
+PY   := $(VENV)/bin
 # 命令行下载默认直连，不继承本机代理变量
 NOPROXY := env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY
+PY_SUITES := packages/scadalib services/rtu-sim services/fep services/api
 
-.PHONY: help env dev web-dev up-full down logs ps test test-api test-web lint fmt build clean
+.PHONY: help env venv dev web-dev up-full down logs ps test test-py test-web lint fmt build clean points
 
 help:  ## 列出命令
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -12,8 +14,15 @@ help:  ## 列出命令
 env:   ## 生成本地 .env
 	@test -f .env || (cp .env.example .env && sed -i -e 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=scada-dev/' -e 's/^IMAGE_PREFIX=.*/IMAGE_PREFIX=ai-scada/' -e 's/^IMAGE_TAG=.*/IMAGE_TAG=dev/' .env && echo ".env created")
 
-dev: env  ## 启动 db/redis/api（api 热重载，端口 18000）
-	$(DEV) up -d --build db redis api
+$(VENV)/.installed: requirements-dev.txt services/*/requirements.txt
+	test -d $(VENV) || python3 -m venv $(VENV)
+	$(NOPROXY) $(PY)/pip install -q -r requirements-dev.txt
+	touch $@
+
+venv: $(VENV)/.installed  ## 创建本地 Python 开发环境
+
+dev: env  ## 启动后端全链路：db/redis/rtu-sim/fep/api（api 热重载，端口 18000）
+	$(DEV) up -d --build db redis rtu-sim fep api
 
 web-dev:  ## 本机启动前端 Vite（http://localhost:5173）
 	cd web && npm run dev -- --host
@@ -30,24 +39,24 @@ logs:  ## 跟踪日志
 ps:
 	$(DEV) --profile full ps
 
-$(API)/.venv:
-	python3 -m venv $(API)/.venv
-	$(NOPROXY) $(API)/.venv/bin/pip install -q -r $(API)/requirements-dev.txt
+test: test-py test-web  ## 运行全部测试
 
-test: test-api test-web  ## 运行全部测试
-
-test-api: $(API)/.venv
-	cd $(API) && .venv/bin/pytest -q
+test-py: venv
+	@set -e; for d in $(PY_SUITES); do echo "== $$d"; (cd $$d && ../../$(PY)/pytest -q); done
 
 test-web:
 	cd web && npm test
 
-lint: $(API)/.venv  ## 代码检查
-	cd $(API) && .venv/bin/ruff check . && .venv/bin/ruff format --check .
+lint: venv  ## 代码检查
+	$(PY)/ruff check packages services && $(PY)/ruff format --check packages services
 	cd web && npm run typecheck
 
-fmt: $(API)/.venv
-	cd $(API) && .venv/bin/ruff check --fix . && .venv/bin/ruff format .
+fmt: venv
+	$(PY)/ruff check --fix packages services && $(PY)/ruff format packages services
+
+points: venv  ## 导出点表 docs/点表.csv
+	$(PY)/python -c "from scadalib.model import *; print(load_station(default_config_path()).point_table_csv(), end='')" > docs/点表.csv
+	@echo "docs/点表.csv: $$(($$(wc -l < docs/点表.csv) - 1)) points"
 
 build:  ## 构建生产镜像
 	docker compose build

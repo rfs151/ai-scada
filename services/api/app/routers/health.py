@@ -15,7 +15,7 @@ async def live() -> dict:
 @router.get("", summary="就绪探针：检查数据库与实时库")
 async def ready(request: Request, response: Response) -> dict:
     state = request.app.state
-    components = await checks.check_all(state.engine, state.redis)
+    components = await checks.check_all(state.pool, state.redis)
     healthy = all(c["status"] == "ok" for c in components.values())
     if not healthy:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
@@ -25,4 +25,5 @@ async def ready(request: Request, response: Response) -> dict:
         "server_time": datetime.now(UTC).isoformat(),
         "uptime_s": round((datetime.now(UTC) - state.started_at).total_seconds()),
         "components": components,
+        "workers": state.workers.status() if state.workers else None,
     }

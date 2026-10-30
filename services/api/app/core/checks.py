@@ -4,9 +4,8 @@ import asyncio
 import time
 from typing import Any
 
+import asyncpg
 from redis.asyncio import Redis
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine
 
 CHECK_TIMEOUT_S = 2.0
 
@@ -23,12 +22,10 @@ async def _timed(coro) -> dict[str, Any]:
     return {"status": status, "latency_ms": round((time.perf_counter() - start) * 1000, 1), **detail}
 
 
-async def _db(engine: AsyncEngine) -> dict[str, Any]:
-    async with engine.connect() as conn:
-        pg = (await conn.execute(text("SHOW server_version"))).scalar_one()
-        ts = (
-            await conn.execute(text("SELECT extversion FROM pg_extension WHERE extname = 'timescaledb'"))
-        ).scalar_one_or_none()
+async def _db(pool: asyncpg.Pool) -> dict[str, Any]:
+    async with pool.acquire() as conn:
+        pg = await conn.fetchval("SHOW server_version")
+        ts = await conn.fetchval("SELECT extversion FROM pg_extension WHERE extname = 'timescaledb'")
     return {"postgres": pg, "timescaledb": ts}
 
 
@@ -38,6 +35,6 @@ async def _redis(client: Redis) -> dict[str, Any]:
     return {"version": info.get("redis_version")}
 
 
-async def check_all(engine: AsyncEngine, redis: Redis) -> dict[str, dict[str, Any]]:
-    db, rds = await asyncio.gather(_timed(_db(engine)), _timed(_redis(redis)))
+async def check_all(pool: asyncpg.Pool, redis: Redis) -> dict[str, dict[str, Any]]:
+    db, rds = await asyncio.gather(_timed(_db(pool)), _timed(_redis(redis)))
     return {"database": db, "redis": rds}

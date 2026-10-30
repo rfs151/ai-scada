@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scadalib"
+version = "0.1.0"
+description = "Shared SCADA library: IEC 60870-5-104 stack and station model"
+requires-python = ">=3.12"
+dependencies = ["pyyaml>=6", "tzdata"]
+
+[tool.setuptools.packages.find]
+include = ["scadalib*"]
+
+[tool.setuptools.package-data]
+scadalib = ["py.typed"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]

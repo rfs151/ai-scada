@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: scadalib
+Version: 0.1.0
+Summary: Shared SCADA library: IEC 60870-5-104 stack and station model
+Requires-Python: >=3.12
+Requires-Dist: pyyaml>=6
+Requires-Dist: tzdata

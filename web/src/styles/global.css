@@ -11,6 +11,10 @@
   --kv110: #e5484d;
   --kv10: #f5b301;
   --deenergized: #5b6475;
+  --accent: #3b82f6;
+  /* 开关位置：红合绿分 */
+  --closed: #dc2626;
+  --open: #16a34a;
   --mono: ui-monospace, 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
 }
 

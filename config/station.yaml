@@ -1,0 +1,186 @@
+# 110kV 示范变电站模型（单一事实来源）
+#   - rtu-sim 据此构建 pandapower 潮流模型
+#   - fep / api 据此生成点表（IOA 按间隔顺序确定性分配，新间隔请追加在末尾以保持地址稳定）
+#
+# 主接线：110kV 内桥接线（两回进线、两台主变，桥开关 100 正常热备用）
+#         10kV 单母分段（分段开关 900 正常热备用，两段母线分列运行）
+#
+# 设备编号遵循调度命名习惯：
+#   断路器 101/102/100/901/902/900/9xx；母线侧刀闸 xxx1、线路(主变)侧刀闸 xxx6、线路接地刀 xxx67
+#   10kV 为中置式开关柜（手车断路器），不设隔离刀闸，仅设出线接地刀 9xx7
+
+station:
+  id: SZ110
+  name: 110kV 示范变电站
+  ca: 1 # 104 公共地址
+
+voltage_levels:
+  HV: { name: 110kV, vn_kv: 110 }
+  LV: { name: 10kV, vn_kv: 10 }
+
+# 上级电源：220kV 变电站 110kV 母线（等值为外部电网）
+grid:
+  node: GRID
+  vm_pu: 1.03
+  s_sc_max_mva: 3000
+
+bays:
+  # ------------------------------------------------------------ 110kV
+  - id: L1
+    name: 110kV 进线一
+    kind: line_in
+    vl: HV
+    equipment:
+      - { id: L1, type: line, from: GRID, to: L1_T, length_km: 15.2, std: LGJ-240 }
+      - { id: "10167", type: earth_switch, node: L1_T, name: 进线一线路接地刀, normal: open }
+      - { id: "1016", type: disconnector, nodes: [L1_T, L1_C], name: 进线一线路侧刀闸 }
+      - { id: "101", type: breaker, nodes: [L1_C, L1_B], name: 进线一断路器 }
+      - { id: "1011", type: disconnector, nodes: [L1_B, HB1], name: 进线一母线侧刀闸 }
+
+  - id: L2
+    name: 110kV 进线二
+    kind: line_in
+    vl: HV
+    equipment:
+      - { id: L2, type: line, from: GRID, to: L2_T, length_km: 18.6, std: LGJ-240 }
+      - { id: "10267", type: earth_switch, node: L2_T, name: 进线二线路接地刀, normal: open }
+      - { id: "1026", type: disconnector, nodes: [L2_T, L2_C], name: 进线二线路侧刀闸 }
+      - { id: "102", type: breaker, nodes: [L2_C, L2_B], name: 进线二断路器 }
+      - { id: "1021", type: disconnector, nodes: [L2_B, HB2], name: 进线二母线侧刀闸 }
+
+  - id: B100
+    name: 110kV 内桥
+    kind: bridge
+    vl: HV
+    equipment:
+      - { id: "1001", type: disconnector, nodes: [HB1, B100_A], name: 内桥 I 侧刀闸 }
+      - { id: "100", type: breaker, nodes: [B100_A, B100_B], name: 内桥断路器, normal: open }
+      - { id: "1002", type: disconnector, nodes: [B100_B, HB2], name: 内桥 II 侧刀闸 }
+
+  # ------------------------------------------------------------ 主变
+  - id: T1
+    name: 1号主变
+    kind: transformer
+    vl: HV
+    equipment:
+      - { id: "1101", type: disconnector, nodes: [HB1, T1_H], name: 1号主变 110kV 侧刀闸 }
+      - { id: T1, type: transformer, hv: T1_H, lv: T1_L, std: SZ11-50000/110, tap: 2 }
+      - { id: "901", type: breaker, nodes: [T1_L, BUS1], vl: LV, name: 1号主变 10kV 侧断路器 }
+
+  - id: T2
+    name: 2号主变
+    kind: transformer
+    vl: HV
+    equipment:
+      - { id: "1102", type: disconnector, nodes: [HB2, T2_H], name: 2号主变 110kV 侧刀闸 }
+      - { id: T2, type: transformer, hv: T2_H, lv: T2_L, std: SZ11-50000/110, tap: 2 }
+      - { id: "902", type: breaker, nodes: [T2_L, BUS2], vl: LV, name: 2号主变 10kV 侧断路器 }
+
+  # ------------------------------------------------------------ 10kV 母线
+  - id: BUS1
+    name: 10kV I 段母线
+    kind: bus
+    vl: LV
+    node: BUS1
+
+  - id: BUS2
+    name: 10kV II 段母线
+    kind: bus
+    vl: LV
+    node: BUS2
+
+  - id: B900
+    name: 10kV 分段
+    kind: bus_tie
+    vl: LV
+    equipment:
+      - { id: "900", type: breaker, nodes: [BUS1, BUS2], name: 10kV 分段断路器, normal: open }
+
+  # ------------------------------------------------------------ 10kV 出线（I 段）
+  - id: F01
+    name: 10kV 工业园线
+    kind: feeder
+    vl: LV
+    profile: industrial
+    peak_mw: 7.2
+    pf: 0.92
+    equipment:
+      - { id: "911", type: breaker, nodes: [BUS1, F01_O], name: 工业园线断路器 }
+      - { id: "9117", type: earth_switch, node: F01_O, name: 工业园线接地刀, normal: open }
+      - { id: F01, type: line, from: F01_O, to: F01_LD, length_km: 4.2, std: YJV22-300 }
+
+  - id: F02
+    name: 10kV 锦苑线
+    kind: feeder
+    vl: LV
+    profile: residential
+    peak_mw: 6.0
+    pf: 0.95
+    equipment:
+      - { id: "912", type: breaker, nodes: [BUS1, F02_O], name: 锦苑线断路器 }
+      - { id: "9127", type: earth_switch, node: F02_O, name: 锦苑线接地刀, normal: open }
+      - { id: F02, type: line, from: F02_O, to: F02_LD, length_km: 3.1, std: YJV22-300 }
+
+  - id: C1
+    name: 10kV 1号电容器
+    kind: capacitor
+    vl: LV
+    q_mvar: 3.0
+    equipment:
+      - { id: "913", type: breaker, nodes: [BUS1, C1_N], name: 1号电容器断路器, normal: open }
+
+  # ------------------------------------------------------------ 10kV 出线（II 段）
+  - id: F03
+    name: 10kV 商业中心线
+    kind: feeder
+    vl: LV
+    profile: commercial
+    peak_mw: 7.0
+    pf: 0.93
+    equipment:
+      - { id: "921", type: breaker, nodes: [BUS2, F03_O], name: 商业中心线断路器 }
+      - { id: "9217", type: earth_switch, node: F03_O, name: 商业中心线接地刀, normal: open }
+      - { id: F03, type: line, from: F03_O, to: F03_LD, length_km: 2.6, std: YJV22-300 }
+
+  - id: F04
+    name: 10kV 光伏并网线
+    kind: pv
+    vl: LV
+    capacity_mw: 6.0
+    equipment:
+      - { id: "922", type: breaker, nodes: [BUS2, F04_O], name: 光伏并网线断路器 }
+      - { id: "9227", type: earth_switch, node: F04_O, name: 光伏并网线接地刀, normal: open }
+      - { id: F04, type: line, from: F04_O, to: F04_PV, length_km: 5.8, std: YJV22-300 }
+
+  - id: F05
+    name: 10kV 滨河线
+    kind: feeder
+    vl: LV
+    profile: residential
+    peak_mw: 5.0
+    pf: 0.94
+    equipment:
+      - { id: "923", type: breaker, nodes: [BUS2, F05_O], name: 滨河线断路器 }
+      - { id: "9237", type: earth_switch, node: F05_O, name: 滨河线接地刀, normal: open }
+      - { id: F05, type: line, from: F05_O, to: F05_LD, length_km: 6.4, std: YJV22-300 }
+
+# 设备参数库
+std_types:
+  line:
+    LGJ-240: { r_ohm_per_km: 0.131, x_ohm_per_km: 0.401, c_nf_per_km: 9.08, max_i_ka: 0.61 }
+    YJV22-300: { r_ohm_per_km: 0.0601, x_ohm_per_km: 0.087, c_nf_per_km: 450, max_i_ka: 0.52 }
+  transformer:
+    SZ11-50000/110:
+      sn_mva: 50
+      vn_hv_kv: 110
+      vn_lv_kv: 10.5
+      vk_percent: 10.5
+      vkr_percent: 0.3
+      pfe_kw: 35
+      i0_percent: 0.25
+      # 有载调压 110±8×1.25%
+      tap_side: hv
+      tap_neutral: 0
+      tap_min: -8
+      tap_max: 8
+      tap_step_percent: 1.25

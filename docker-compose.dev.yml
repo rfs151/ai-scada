@@ -1,5 +1,5 @@
-# 开发覆盖：api 热重载、暴露 db/redis/api 端口给本机调试。
-# 前端开发直接在本机跑 `npm run dev`（Vite 代理 /api、/ws 到 :8000），
+# 开发覆盖：api 热重载、暴露 db/redis/api/104 端口给本机调试（只绑定 127.0.0.1）。
+# 前端开发直接在本机跑 `npm run dev`（Vite 代理 /api、/ws 到 :18000），
 # gateway 默认不启动，用 `make up-full` 才会带上。
 
 services:
@@ -8,6 +8,14 @@ services:
 
   redis:
     ports: ["127.0.0.1:6379:6379"]
+
+  # 本机可用第三方 104 调试工具连接 127.0.0.1:12404 观察子站报文
+  rtu-sim:
+    ports: ["127.0.0.1:${RTU_DEV_PORT:-12404}:2404"]
+
+  fep:
+    environment:
+      GI_PERIOD_S: "300"
 
   api:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
