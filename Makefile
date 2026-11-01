@@ -6,10 +6,10 @@ PY   := $(VENV)/bin
 NOPROXY := env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY
 PY_SUITES := packages/scadalib services/rtu-sim services/fep services/api
 
-.PHONY: help env venv dev web-dev up-full down logs ps test test-py test-web lint fmt build clean points
+.PHONY: help env venv dev web-dev local local-stop local-check local-restart local-attach up-full down logs ps test test-py test-web lint fmt build clean points
 
 help:  ## 列出命令
-	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-13s\033[0m %s\n", $$1, $$2}'
 
 env:   ## 生成本地 .env
 	@test -f .env || (cp .env.example .env && sed -i -e 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=scada-dev/' -e 's/^IMAGE_PREFIX=.*/IMAGE_PREFIX=ai-scada/' -e 's/^IMAGE_TAG=.*/IMAGE_TAG=dev/' .env && echo ".env created")
@@ -26,6 +26,21 @@ dev: env  ## 启动后端全链路：db/redis/rtu-sim/fep/api（api 热重载，
 
 web-dev:  ## 本机启动前端 Vite（http://localhost:5173）
 	cd web && npm run dev -- --host
+
+local:  ## 本机开发模式一键启动并自检：db/redis 用 Docker，其余跑在本机 tmux（http://localhost:5173）
+	@scripts/local.sh up
+
+local-stop:  ## 停止本机开发模式进程（db/redis 容器保留）
+	@scripts/local.sh down
+
+local-check:  ## 本机开发模式自检
+	@scripts/local.sh check
+
+local-restart:  ## 重启本机开发模式的单个进程：make local-restart S=fep
+	@scripts/local.sh restart $(S)
+
+local-attach:  ## 进入本机开发模式的 tmux 会话看日志
+	@scripts/local.sh attach
 
 up-full: env  ## 启动全部服务含网关（http://localhost:18088，生产形态）
 	$(DEV) --profile full up -d --build

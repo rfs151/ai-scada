@@ -19,3 +19,6 @@ dist/
 !.vscode/extensions.json
 .idea/
 .DS_Store
+
+# 本机开发模式运行日志
+.run/

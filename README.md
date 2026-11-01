@@ -434,29 +434,103 @@ ASDU 字段：
 
 ## 本地开发
 
-环境：Linux / WSL2、Docker（含 compose 插件）、Python 3.12、Node.js 20+、make。
+环境：Linux / WSL2、Docker（含 compose 插件）、Python 3.12、Node.js 20+、make、tmux。
+
+本机有两种运行方式。日常开发用**本机开发模式**；**Docker 开发模式**用于部署前验证镜像，Docker 生产部署只在服务器上使用（见 [Docker 部署](#docker-部署)）。
+
+| | 本机开发模式 `make local` | Docker 开发模式 `make up-full` |
+|---|---|---|
+| db、redis | Docker 容器 | Docker 容器 |
+| rtu-sim、fep、api | 本机进程（tmux），改代码即时生效，可打断点 | 容器；只有 api 热重载，fep/rtu-sim 改动需重新构建镜像 |
+| 前端 | Vite http://localhost:5173 | 网关镜像 http://localhost:18088 |
+| 用途 | 日常开发调试 | 提交/部署前验证镜像和容器间连通 |
+
+两种方式共用同一个 Redis，不能同时运行：`make local` 启动时会自动停掉 Docker 里的 api/fep/rtu-sim/gateway；切回 Docker 时先执行 `make local-stop` 再执行 `make up-full`。
+
+### 首次准备
 
 ```bash
 git clone https://github.com/rfs151/ai-scada.git && cd ai-scada
 make env        # 生成本地 .env（开发口令、镜像标签 dev）
 make venv       # 创建 .venv（全部 Python 服务 + 测试工具）
+```
+
+### 本机开发模式（推荐）
+
+```bash
+make local                  # 一键启动并自检；已在运行时只做自检 → http://localhost:5173
+make local-check            # 只做自检
+make local-attach           # 进入 tmux 看实时日志（Ctrl-b n 切换窗口，Ctrl-b d 退出）
+make local-restart S=fep    # 重启单个进程：rtu-sim / fep / api / web
+make local-stop             # 停止本机进程（db/redis 容器保留）
+```
+
+`make local`（脚本 `scripts/local.sh`）依次完成：
+
+1. 停掉 Docker 里的业务容器，避免两套仿真/前置同时写 Redis；
+2. 启动 db、redis 容器并等待健康；
+3. 在 tmux 会话 `ai-scada-local` 中启动 4 个进程：rtu-sim（104 子站 2404）、fep、api（18000，`--reload` 热重载）、web（Vite 5173）；
+4. 自检，任一项失败即报错退出：
+
+| 检查项 | 判断方法 |
+|---|---|
+| 进程存活 | 4 个 tmux 窗口都在且进程未退出（进程退出后窗口保留，方便看报错） |
+| API 就绪 | `GET /api/health` 返回 ok（数据库、实时库均正常） |
+| 104 通道 | Redis `ch:rtu1` 状态为 `up` |
+| 数据在刷新 | Redis 流 `rt:chg` 3 秒内有新数据 |
+| 前端 | Vite 页面可访问，且 `/api` 代理到 api 正常 |
+
+各进程日志同时写入 `.run/<服务名>.log`（已在 `.gitignore` 中）。配置文件无需额外设置：scadalib 以可编辑方式安装，会自动找到仓库里的 `config/station.yaml`（也可用环境变量 `STATION_CONFIG` 指定）。
+
+### Docker 开发模式
+
+```bash
 make dev        # 后端全链路 db/redis/rtu-sim/fep/api（api 热重载）→ http://localhost:18000/docs
-make web-dev    # 前端 Vite 开发服务器 → http://localhost:5173
+make web-dev    # 配合 make dev：本机起前端 → http://localhost:5173
 make up-full    # 生产形态（含网关）→ http://localhost:18088
+make ps         # 容器状态
+make logs       # 跟踪日志
+make down       # 停止（保留数据卷）
+make clean      # 停止并删除数据卷（清空数据库）
+```
+
+开发编排叠加了 `docker-compose.dev.yml`，网关属于 `full` profile。直接用 `docker compose` 命令时，必须同时带上两个 `-f` 和 `--profile full`，否则会按生产配置重建容器，端口映射和热重载都会变化：
+
+```bash
+alias dc='docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile full'
+
+dc ps                                  # 状态与健康检查
+dc logs -f --tail=200 api              # 单个服务日志：api / fep / rtu-sim / gateway / db / redis
+dc restart fep rtu-sim                 # 重启采集链路
+dc up -d --build api                   # 改代码后重建单个服务
+dc exec db psql -U scada -d scada      # 连接数据库
+dc exec redis redis-cli                # 连接实时库
+docker stats --no-stream               # 资源占用
+docker image prune -f && docker builder prune -f   # 清理旧镜像和构建缓存
+```
+
+数据库备份与恢复命令与生产相同，见 [日常运维](#8-日常运维)（命令前缀换成 `dc`）。
+
+### 测试与工具
+
+```bash
 make test       # 规约栈/仿真/前置/api 的 pytest + 前端 vitest
 make lint       # ruff + vue-tsc
 make points     # 导出点表 docs/点表.csv
-make logs       # 跟踪日志
-make down       # 停止
+make help       # 列出全部命令
 ```
 
-开发端口（只绑定 127.0.0.1，可在 `.env` 修改）：
+### 开发端口
+
+只绑定 127.0.0.1，可在 `.env` 修改。
 
 | 端口 | 服务 | 说明 |
 |---|---|---|
-| 18088 | 网关 | 生产形态的完整页面 |
-| 18000 | api | `/docs` 为 OpenAPI 文档 |
-| 12404 | 仿真子站 104 | 可用第三方 104 调试工具连接观察 |
+| 5173 | 前端 Vite | 本机开发模式 / `make web-dev` |
+| 18088 | 网关 | Docker 开发模式的完整页面 |
+| 18000 | api | `/docs` 为 OpenAPI 文档；两种模式相同 |
+| 2404 | 仿真子站 104 | 本机开发模式，监听 0.0.0.0，Windows 上的 104 调试工具可直接连接 |
+| 12404 | 仿真子站 104 | Docker 开发模式，映射容器内 2404 |
 | 5432 / 6379 | 数据库 / Redis | 本机调试 |
 
 WSL mirrored 网络模式下，Windows 占用了 8000/8080/18080，所以开发端口避开了这几个。国内构建镜像时，可在 `.env` 设 `PIP_INDEX_URL`、`NPM_REGISTRY` 使用国内镜像源。
