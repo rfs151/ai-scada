@@ -7,12 +7,12 @@
 #   ./ctl.sh status           容器状态 + 健康检查
 #   ./ctl.sh logs [服务]      跟踪日志
 #
-# 本机：http://127.0.0.1:8088/api/health    公网（国内 VPS frp 转发）：http://121.41.221.119:8088/
+# 本机：http://127.0.0.1:8088/api/health    公网（国内 VPS frp 转发）：http://47.117.29.74:8088/
 set -euo pipefail
 cd "$(dirname "$0")"
 DC=(docker compose)
 HEALTH=http://127.0.0.1:8088/api/health
-PUBLIC=http://121.41.221.119:8088/
+PUBLIC=http://47.117.29.74:8088/
 
 health() {
   local code
