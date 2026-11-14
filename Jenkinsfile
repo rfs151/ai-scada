@@ -24,6 +24,8 @@ pipeline {
             "$VENV/bin/pip" install -q ${PIP_INDEX_URL:+-i $PIP_INDEX_URL} -r requirements-dev.txt
             touch "$VENV/.req-$HASH"
           fi
+          # scadalib is an editable install: point it at this workspace every build (the cached venv may come from another path)
+          "$VENV/bin/pip" install -q --no-deps -e packages/scadalib
         '''
       }
     }
